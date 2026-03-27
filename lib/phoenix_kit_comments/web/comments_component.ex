@@ -131,29 +131,41 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp do_delete_comment(socket, comment) do
-    if can_delete_comment?(socket.assigns.current_user, comment) do
-      case PhoenixKitComments.delete_comment(comment) do
-        {:ok, _} ->
-          send(
-            self(),
-            {:comments_updated,
-             %{
-               resource_type: socket.assigns.resource_type,
-               resource_uuid: socket.assigns.resource_uuid,
-               action: :deleted
-             }}
-          )
+    cond do
+      # First verify the comment belongs to the current resource (IDOR protection)
+      comment.resource_type != socket.assigns.resource_type or
+          comment.resource_uuid != socket.assigns.resource_uuid ->
+        {:noreply, socket |> put_flash(:error, "Invalid comment for this resource")}
 
-          {:noreply,
-           socket
-           |> load_comments()
-           |> put_flash(:info, "Comment deleted")}
+      not can_delete_comment?(socket.assigns.current_user, comment) ->
+        {:noreply,
+         socket |> put_flash(:error, "You don't have permission to delete this comment")}
 
-        {:error, _} ->
-          {:noreply, socket |> put_flash(:error, "Failed to delete comment")}
-      end
-    else
-      {:noreply, socket |> put_flash(:error, "You don't have permission to delete this comment")}
+      true ->
+        execute_delete(socket, comment)
+    end
+  end
+
+  defp execute_delete(socket, comment) do
+    case PhoenixKitComments.delete_comment(comment) do
+      {:ok, _} ->
+        send(
+          self(),
+          {:comments_updated,
+           %{
+             resource_type: socket.assigns.resource_type,
+             resource_uuid: socket.assigns.resource_uuid,
+             action: :deleted
+           }}
+        )
+
+        {:noreply,
+         socket
+         |> load_comments()
+         |> put_flash(:info, "Comment deleted")}
+
+      {:error, _} ->
+        {:noreply, socket |> put_flash(:error, "Failed to delete comment")}
     end
   end
 

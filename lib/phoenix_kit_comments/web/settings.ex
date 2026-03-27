@@ -16,6 +16,7 @@ defmodule PhoenixKitComments.Web.Settings do
   use PhoenixKitWeb, :live_view
 
   alias PhoenixKit.Settings
+  alias PhoenixKit.Users.Auth.Scope
 
   @impl true
   def mount(_params, _session, socket) do
@@ -33,6 +34,44 @@ defmodule PhoenixKitComments.Web.Settings do
 
   @impl true
   def handle_event("save", params, socket) do
+    # Verify authorization before saving
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        do_save_settings(params, socket)
+    end
+  end
+
+  @impl true
+  def handle_event("reset_defaults", _params, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        defaults = %{
+          "comments_enabled" => "false",
+          "comments_moderation" => "false",
+          "comments_max_depth" => "10",
+          "comments_max_length" => "10000"
+        }
+
+        Enum.each(defaults, fn {key, value} ->
+          Settings.update_setting(key, value)
+        end)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Settings reset to defaults")
+         |> load_settings()}
+    end
+  end
+
+  ## --- Private ---
+
+  defp do_save_settings(params, socket) do
     socket = assign(socket, :saving, true)
     settings = Map.get(params, "settings", %{})
 
@@ -66,30 +105,21 @@ defmodule PhoenixKitComments.Web.Settings do
     end
   end
 
-  @impl true
-  def handle_event("reset_defaults", _params, socket) do
-    defaults = %{
-      "comments_enabled" => "false",
-      "comments_moderation" => "false",
-      "comments_max_depth" => "10",
-      "comments_max_length" => "10000"
-    }
-
-    Enum.each(defaults, fn {key, value} ->
-      Settings.update_setting(key, value)
-    end)
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Settings reset to defaults")
-     |> load_settings()}
-  end
-
   defp load_settings(socket) do
     socket
     |> assign(:comments_enabled, Settings.get_setting("comments_enabled", "false"))
     |> assign(:comments_moderation, Settings.get_setting("comments_moderation", "false"))
     |> assign(:comments_max_depth, Settings.get_setting("comments_max_depth", "10"))
     |> assign(:comments_max_length, Settings.get_setting("comments_max_length", "10000"))
+  end
+
+  defp check_authorization(socket) do
+    scope = socket.assigns[:phoenix_kit_current_scope]
+
+    if scope && Scope.has_module_access?(scope, "comments") do
+      :ok
+    else
+      {:error, :unauthorized}
+    end
   end
 end

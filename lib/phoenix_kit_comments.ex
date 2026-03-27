@@ -396,7 +396,7 @@ defmodule PhoenixKitComments do
     query = maybe_filter_by_user(query, user_uuid)
 
     query =
-      if search && search != "" do
+      if search && String.trim(search) != "" do
         pattern = "%#{escape_like_pattern(search)}%"
         where(query, [c], ilike(c.content, ^pattern))
       else
@@ -506,21 +506,33 @@ defmodule PhoenixKitComments do
   def like_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
       maybe_remove_dislike(comment_uuid, user_uuid)
-
-      case %CommentLike{}
-           |> CommentLike.changeset(%{
-             comment_uuid: comment_uuid,
-             user_uuid: user_uuid
-           })
-           |> repo().insert() do
-        {:ok, like} ->
-          increment_comment_like_count(comment_uuid)
-          like
-
-        {:error, changeset} ->
-          repo().rollback(changeset)
-      end
+      do_insert_like(comment_uuid, user_uuid)
     end)
+  end
+
+  defp do_insert_like(comment_uuid, user_uuid) do
+    # Check if like already exists (handles race condition)
+    case repo().get_by(CommentLike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
+      nil ->
+        insert_new_like(comment_uuid, user_uuid)
+
+      existing_like ->
+        # Already liked, return existing record gracefully
+        existing_like
+    end
+  end
+
+  defp insert_new_like(comment_uuid, user_uuid) do
+    case %CommentLike{}
+         |> CommentLike.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
+         |> repo().insert() do
+      {:ok, like} ->
+        increment_comment_like_count(comment_uuid)
+        like
+
+      {:error, changeset} ->
+        repo().rollback(changeset)
+    end
   end
 
   @doc "User unlikes a comment. Deletes like record and decrements counter."
@@ -565,21 +577,33 @@ defmodule PhoenixKitComments do
   def dislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
       maybe_remove_like(comment_uuid, user_uuid)
-
-      case %CommentDislike{}
-           |> CommentDislike.changeset(%{
-             comment_uuid: comment_uuid,
-             user_uuid: user_uuid
-           })
-           |> repo().insert() do
-        {:ok, dislike} ->
-          increment_comment_dislike_count(comment_uuid)
-          dislike
-
-        {:error, changeset} ->
-          repo().rollback(changeset)
-      end
+      do_insert_dislike(comment_uuid, user_uuid)
     end)
+  end
+
+  defp do_insert_dislike(comment_uuid, user_uuid) do
+    # Check if dislike already exists (handles race condition)
+    case repo().get_by(CommentDislike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
+      nil ->
+        insert_new_dislike(comment_uuid, user_uuid)
+
+      existing_dislike ->
+        # Already disliked, return existing record gracefully
+        existing_dislike
+    end
+  end
+
+  defp insert_new_dislike(comment_uuid, user_uuid) do
+    case %CommentDislike{}
+         |> CommentDislike.changeset(%{comment_uuid: comment_uuid, user_uuid: user_uuid})
+         |> repo().insert() do
+      {:ok, dislike} ->
+        increment_comment_dislike_count(comment_uuid)
+        dislike
+
+      {:error, changeset} ->
+        repo().rollback(changeset)
+    end
   end
 
   @doc "User removes dislike from a comment. Deletes dislike record and decrements counter."
