@@ -139,7 +139,7 @@ defmodule PhoenixKitComments.Web.Settings do
     resource_type = String.trim(params["resource_type"] || "")
     path_template = String.trim(params["path_template"] || "")
 
-    case validate_path_template(resource_type, path_template) do
+    case validate_resource_path(resource_type, path_template) do
       :ok ->
         templates = Map.put(socket.assigns.resource_paths, resource_type, path_template)
         PhoenixKitComments.update_resource_path_templates(templates)
@@ -154,14 +154,11 @@ defmodule PhoenixKitComments.Web.Settings do
     end
   end
 
-  defp validate_path_template(resource_type, path_template) do
+  defp validate_resource_path("", _), do: {:error, "Resource type is required"}
+  defp validate_resource_path(_, ""), do: {:error, "Path template is required"}
+
+  defp validate_resource_path(_resource_type, path_template) do
     cond do
-      resource_type == "" ->
-        {:error, "Resource type is required"}
-
-      path_template == "" ->
-        {:error, "Path template is required"}
-
       not String.starts_with?(path_template, "/") ->
         {:error, "Path template must start with /"}
 
