@@ -174,7 +174,7 @@ Start with action verbs: `Add`, `Update`, `Fix`, `Remove`, `Merge`. **NEVER ment
 
 ### PR Reviews
 
-PR review files go in `dev_docs/pull_requests/{year}/{pr_number}-{slug}/` directory. Use `{AGENT}_REVIEW.md` naming (e.g., `CLAUDE_REVIEW.md`, `GPT_REVIEW.md`).
+PR review files go in `dev_docs/pull_requests/{year}/{pr_number}-{slug}/` directory. Use `{AGENT}_REVIEW.md` naming (e.g., `CLAUDE_REVIEW.md`, `MISTRAL_REVIEW.md`).
 
 Review template should use severity levels: `BUG - CRITICAL`, `BUG - HIGH`, `BUG - MEDIUM`, `NITPICK`, `OBSERVATION`. Include a "What Was Done Well" section. Use `-- FIXED` notation for resolved issues.
 
