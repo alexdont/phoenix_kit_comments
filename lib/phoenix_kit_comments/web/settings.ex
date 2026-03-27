@@ -79,6 +79,8 @@ defmodule PhoenixKitComments.Web.Settings do
         {:noreply, put_flash(socket, :error, "Not authorized")}
 
       :ok ->
+        # Resource path templates are intentionally NOT reset here —
+        # they are user-configured data, not settings with defaults.
         defaults = %{
           "comments_enabled" => "false",
           "comments_moderation" => "false",
@@ -137,29 +139,8 @@ defmodule PhoenixKitComments.Web.Settings do
     resource_type = String.trim(params["resource_type"] || "")
     path_template = String.trim(params["path_template"] || "")
 
-    cond do
-      resource_type == "" ->
-        {:noreply, put_flash(socket, :error, "Resource type is required")}
-
-      path_template == "" ->
-        {:noreply, put_flash(socket, :error, "Path template is required")}
-
-      not String.starts_with?(path_template, "/") ->
-        {:noreply, put_flash(socket, :error, "Path template must start with /")}
-
-      String.contains?(path_template, "://") ->
-        {:noreply, put_flash(socket, :error, "Path template must be a relative path")}
-
-      not (String.contains?(path_template, ":uuid") or
-               String.contains?(path_template, ":metadata.")) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Path template must contain :uuid or :metadata.KEY placeholders"
-         )}
-
-      true ->
+    case validate_path_template(resource_type, path_template) do
+      :ok ->
         templates = Map.put(socket.assigns.resource_paths, resource_type, path_template)
         PhoenixKitComments.update_resource_path_templates(templates)
 
@@ -167,6 +148,32 @@ defmodule PhoenixKitComments.Web.Settings do
          socket
          |> put_flash(:info, "Added path for \"#{resource_type}\"")
          |> load_settings()}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  defp validate_path_template(resource_type, path_template) do
+    cond do
+      resource_type == "" ->
+        {:error, "Resource type is required"}
+
+      path_template == "" ->
+        {:error, "Path template is required"}
+
+      not String.starts_with?(path_template, "/") ->
+        {:error, "Path template must start with /"}
+
+      String.contains?(path_template, "://") ->
+        {:error, "Path template must be a relative path"}
+
+      not (String.contains?(path_template, ":uuid") or
+               String.contains?(path_template, ":metadata.")) ->
+        {:error, "Path template must contain :uuid or :metadata.KEY placeholders"}
+
+      true ->
+        :ok
     end
   end
 
