@@ -101,12 +101,18 @@ defmodule PhoenixKitComments do
 
   @doc "Returns the configured maximum comment depth."
   def get_max_depth do
-    Settings.get_setting("comments_max_depth", "10") |> String.to_integer()
+    case Integer.parse(Settings.get_setting("comments_max_depth", "10")) do
+      {n, _} -> n
+      :error -> 10
+    end
   end
 
   @doc "Returns the configured maximum comment length."
   def get_max_length do
-    Settings.get_setting("comments_max_length", "10000") |> String.to_integer()
+    case Integer.parse(Settings.get_setting("comments_max_length", "10000")) do
+      {n, _} -> n
+      :error -> 10_000
+    end
   end
 
   # ============================================================================
@@ -196,25 +202,20 @@ defmodule PhoenixKitComments do
   end
 
   defp do_create_comment(resource_type, resource_uuid, user_uuid, attrs) do
-    repo().transaction(fn ->
-      attrs =
-        attrs
-        |> Map.put(:resource_type, resource_type)
-        |> Map.put(:resource_uuid, resource_uuid)
-        |> Map.put(:user_uuid, user_uuid)
-        |> maybe_calculate_depth()
+    attrs =
+      attrs
+      |> Map.put(:resource_type, resource_type)
+      |> Map.put(:resource_uuid, resource_uuid)
+      |> Map.put(:user_uuid, user_uuid)
+      |> maybe_calculate_depth()
+      |> maybe_set_initial_status()
 
-      case %Comment{}
-           |> Comment.changeset(attrs)
-           |> repo().insert() do
-        {:ok, comment} ->
-          notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
-          comment
-
-        {:error, changeset} ->
-          repo().rollback(changeset)
-      end
-    end)
+    with :ok <- validate_depth(attrs),
+         :ok <- validate_content_length(attrs),
+         {:ok, comment} <- %Comment{} |> Comment.changeset(attrs) |> repo().insert() do
+      notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
+      {:ok, comment}
+    end
   end
 
   @doc """
@@ -232,27 +233,25 @@ defmodule PhoenixKitComments do
   end
 
   @doc """
-  Deletes a comment.
+  Soft-deletes a comment by setting its status to "deleted".
 
-  Cascades to child comments. Invokes resource handler callback if configured.
+  Invokes resource handler callback if configured.
   """
   def delete_comment(%Comment{} = comment) do
-    repo().transaction(fn ->
-      case repo().delete(comment) do
-        {:ok, deleted} ->
-          notify_resource_handler(
-            :on_comment_deleted,
-            comment.resource_type,
-            comment.resource_uuid,
-            deleted
-          )
-
+    case update_comment(comment, %{status: "deleted"}) do
+      {:ok, deleted} ->
+        notify_resource_handler(
+          :on_comment_deleted,
+          comment.resource_type,
+          comment.resource_uuid,
           deleted
+        )
 
-        {:error, changeset} ->
-          repo().rollback(changeset)
-      end
-    end)
+        {:ok, deleted}
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -398,7 +397,7 @@ defmodule PhoenixKitComments do
 
     query =
       if search && search != "" do
-        pattern = "%#{search}%"
+        pattern = "%#{escape_like_pattern(search)}%"
         where(query, [c], ilike(c.content, ^pattern))
       else
         query
@@ -419,6 +418,14 @@ defmodule PhoenixKitComments do
       per_page: per_page,
       total_pages: ceil(total / per_page)
     }
+  end
+
+  @doc "Returns distinct resource types that have comments."
+  def list_resource_types do
+    from(c in Comment, distinct: true, select: c.resource_type, order_by: c.resource_type)
+    |> repo().all()
+  rescue
+    _ -> []
   end
 
   @doc "Returns aggregate statistics for all comments."
@@ -495,9 +502,11 @@ defmodule PhoenixKitComments do
   # Like Operations
   # ============================================================================
 
-  @doc "User likes a comment. Creates like record and increments counter."
+  @doc "User likes a comment. Removes any existing dislike first."
   def like_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
+      maybe_remove_dislike(comment_uuid, user_uuid)
+
       case %CommentLike{}
            |> CommentLike.changeset(%{
              comment_uuid: comment_uuid,
@@ -552,9 +561,11 @@ defmodule PhoenixKitComments do
   # Dislike Operations
   # ============================================================================
 
-  @doc "User dislikes a comment. Creates dislike record and increments counter."
+  @doc "User dislikes a comment. Removes any existing like first."
   def dislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
     repo().transaction(fn ->
+      maybe_remove_like(comment_uuid, user_uuid)
+
       case %CommentDislike{}
            |> CommentDislike.changeset(%{
              comment_uuid: comment_uuid,
@@ -625,19 +636,18 @@ defmodule PhoenixKitComments do
   end
 
   defp build_comment_tree(comments) do
-    comment_map = Map.new(comments, &{&1.uuid, &1})
+    children_by_parent = Enum.group_by(comments, & &1.parent_uuid)
 
-    comments
-    |> Enum.filter(&(&1.parent_uuid == nil))
-    |> Enum.map(&add_children(&1, comment_map))
+    children_by_parent
+    |> Map.get(nil, [])
+    |> Enum.map(&add_children(&1, children_by_parent))
   end
 
-  defp add_children(comment, comment_map) do
+  defp add_children(comment, children_by_parent) do
     children =
-      comment_map
-      |> Map.values()
-      |> Enum.filter(&(&1.parent_uuid == comment.uuid))
-      |> Enum.map(&add_children(&1, comment_map))
+      children_by_parent
+      |> Map.get(comment.uuid, [])
+      |> Enum.map(&add_children(&1, children_by_parent))
 
     Map.put(comment, :children, children)
   end
@@ -678,6 +688,68 @@ defmodule PhoenixKitComments do
       where(query, [c], c.user_uuid == ^user_uuid)
     else
       query
+    end
+  end
+
+  defp maybe_set_initial_status(attrs) do
+    if Map.has_key?(attrs, :status) do
+      attrs
+    else
+      if Settings.get_boolean_setting("comments_moderation", false) do
+        Map.put(attrs, :status, "pending")
+      else
+        attrs
+      end
+    end
+  end
+
+  defp validate_depth(attrs) do
+    max = get_max_depth()
+
+    if (attrs[:depth] || 0) >= max do
+      {:error, :max_depth_exceeded}
+    else
+      :ok
+    end
+  end
+
+  defp validate_content_length(attrs) do
+    max = get_max_length()
+    content = attrs[:content] || attrs["content"] || ""
+
+    if String.length(content) > max do
+      {:error, :content_too_long}
+    else
+      :ok
+    end
+  end
+
+  defp escape_like_pattern(pattern) do
+    pattern
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
+  end
+
+  defp maybe_remove_like(comment_uuid, user_uuid) do
+    case repo().get_by(CommentLike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
+      nil ->
+        :ok
+
+      like ->
+        {:ok, _} = repo().delete(like)
+        decrement_comment_like_count(comment_uuid)
+    end
+  end
+
+  defp maybe_remove_dislike(comment_uuid, user_uuid) do
+    case repo().get_by(CommentDislike, comment_uuid: comment_uuid, user_uuid: user_uuid) do
+      nil ->
+        :ok
+
+      dislike ->
+        {:ok, _} = repo().delete(dislike)
+        decrement_comment_dislike_count(comment_uuid)
     end
   end
 

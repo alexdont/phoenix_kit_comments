@@ -57,9 +57,11 @@
         <label class="label"><span class="label-text">Resource Type</span></label>
         <select name="filter[resource_type]" class="select select-bordered select-sm">
           <option value="">All Types</option>
-          <option value="post" selected={@filter_resource_type == "post"}>Post</option>
-          <option value="entity" selected={@filter_resource_type == "entity"}>Entity</option>
-          <option value="ticket" selected={@filter_resource_type == "ticket"}>Ticket</option>
+          <%= for rt <- @resource_types do %>
+            <option value={rt} selected={@filter_resource_type == rt}>
+              {String.capitalize(rt)}
+            </option>
+          <% end %>
         </select>
       </div>
 
@@ -287,7 +289,7 @@
           <.link
             patch={
               Routes.path(
-                "/admin/comments?page=#{page}&search=#{@search}&resource_type=#{@filter_resource_type || ""}&status=#{@filter_status || ""}"
+                "/admin/comments?#{URI.encode_query(%{"page" => page, "search" => @search || "", "resource_type" => @filter_resource_type || "", "status" => @filter_status || ""})}"
               )
             }
             class={["join-item btn btn-sm", if(page == @page, do: "btn-active", else: "")]}

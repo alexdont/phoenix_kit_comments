@@ -13,8 +13,10 @@ defmodule PhoenixKitComments.Web.Index do
   use PhoenixKitWeb, :live_view
 
   alias PhoenixKit.Settings
+  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitComments
+  alias PhoenixKitComments.Comment
 
   @impl true
   def mount(_params, _session, socket) do
@@ -31,6 +33,7 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:resource_context, %{})
         |> assign(:stats, PhoenixKitComments.comment_stats())
         |> assign(:selected_uuids, [])
+        |> assign(:resource_types, PhoenixKitComments.list_resource_types())
         |> assign_filter_defaults()
 
       {:ok, socket}
@@ -78,44 +81,44 @@ defmodule PhoenixKitComments.Web.Index do
   end
 
   @impl true
-  def handle_event("approve", %{"id" => id}, socket) do
-    case PhoenixKitComments.get_comment(id) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Comment not found")}
+  def handle_event("approve", %{"uuid" => uuid}, socket) do
+    with :ok <- check_authorization(socket),
+         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
+      PhoenixKitComments.approve_comment(comment)
 
-      comment ->
-        PhoenixKitComments.approve_comment(comment)
-
-        {:noreply,
-         socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment approved")}
+      {:noreply,
+       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment approved")}
+    else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
+      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
     end
   end
 
   @impl true
-  def handle_event("hide", %{"id" => id}, socket) do
-    case PhoenixKitComments.get_comment(id) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Comment not found")}
+  def handle_event("hide", %{"uuid" => uuid}, socket) do
+    with :ok <- check_authorization(socket),
+         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
+      PhoenixKitComments.hide_comment(comment)
 
-      comment ->
-        PhoenixKitComments.hide_comment(comment)
-
-        {:noreply,
-         socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment hidden")}
+      {:noreply,
+       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment hidden")}
+    else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
+      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
     end
   end
 
   @impl true
-  def handle_event("delete", %{"id" => id}, socket) do
-    case PhoenixKitComments.get_comment(id) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Comment not found")}
+  def handle_event("delete", %{"uuid" => uuid}, socket) do
+    with :ok <- check_authorization(socket),
+         %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
+      PhoenixKitComments.delete_comment(comment)
 
-      comment ->
-        PhoenixKitComments.delete_comment(comment)
-
-        {:noreply,
-         socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment deleted")}
+      {:noreply,
+       socket |> load_comments() |> reload_stats() |> put_flash(:info, "Comment deleted")}
+    else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, "Not authorized")}
+      nil -> {:noreply, put_flash(socket, :error, "Comment not found")}
     end
   end
 
@@ -133,6 +136,16 @@ defmodule PhoenixKitComments.Web.Index do
 
   @impl true
   def handle_event("bulk_action", %{"action" => action}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "Not authorized")}
+
+      :ok ->
+        do_bulk_action(action, socket)
+    end
+  end
+
+  defp do_bulk_action(action, socket) do
     uuids = socket.assigns.selected_uuids
 
     if uuids == [] do
@@ -247,6 +260,16 @@ defmodule PhoenixKitComments.Web.Index do
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(val), do: val
+
+  defp check_authorization(socket) do
+    scope = socket.assigns[:phoenix_kit_current_scope]
+
+    if scope && Scope.has_module_access?(scope, "comments") do
+      :ok
+    else
+      {:error, :unauthorized}
+    end
+  end
 
   defp resource_info(resource_context, comment) do
     Map.get(resource_context, {comment.resource_type, comment.resource_uuid})

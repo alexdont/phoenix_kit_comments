@@ -37,13 +37,13 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   import PhoenixKitWeb.Components.Core.Icon
 
   alias PhoenixKit.Users.Roles
-  alias PhoenixKitComments
 
   @impl true
   def mount(socket) do
     {:ok,
      socket
      |> assign(:comments, [])
+     |> assign(:comment_count, 0)
      |> assign(:reply_to, nil)
      |> assign(:new_comment, "")}
   end
