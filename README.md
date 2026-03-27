@@ -22,7 +22,7 @@ Add `phoenix_kit_comments` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_comments, github: "mdon/phoenix_kit_comments"}
+    {:phoenix_kit_comments, "~> 0.1.0"}
   ]
 end
 ```
@@ -32,6 +32,11 @@ Then fetch dependencies:
 ```bash
 mix deps.get
 ```
+
+> **Note:** For development or if not yet published to Hex, you can use:
+> ```elixir
+> {:phoenix_kit_comments, github: "mdon/phoenix_kit_comments"}
+> ```
 
 PhoenixKit auto-discovers the module at startup — no additional configuration needed.
 
