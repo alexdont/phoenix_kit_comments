@@ -437,7 +437,9 @@ defmodule PhoenixKitComments do
     |> repo().all()
     |> Map.new()
   rescue
-    _ -> %{}
+    e ->
+      Logger.warning("Failed to load comment counts by type: #{inspect(e)}")
+      %{}
   end
 
   @doc "Returns aggregate statistics for all comments."
@@ -468,7 +470,9 @@ defmodule PhoenixKitComments do
   def get_resource_path_templates do
     Settings.get_json_setting("comment_resource_paths", %{})
   rescue
-    _ -> %{}
+    e ->
+      Logger.warning("Failed to load resource path templates: #{inspect(e)}")
+      %{}
   end
 
   @doc """

@@ -67,8 +67,8 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          socket
-         |> assign(:resource_paths, templates)
-         |> put_flash(:info, "Removed path for \"#{resource_type}\"")}
+         |> put_flash(:info, "Removed path for \"#{resource_type}\"")
+         |> load_settings()}
     end
   end
 
@@ -144,6 +144,12 @@ defmodule PhoenixKitComments.Web.Settings do
       path_template == "" ->
         {:noreply, put_flash(socket, :error, "Path template is required")}
 
+      not String.starts_with?(path_template, "/") ->
+        {:noreply, put_flash(socket, :error, "Path template must start with /")}
+
+      String.contains?(path_template, "://") ->
+        {:noreply, put_flash(socket, :error, "Path template must be a relative path")}
+
       not (String.contains?(path_template, ":uuid") or
                String.contains?(path_template, ":metadata.")) ->
         {:noreply,
@@ -159,8 +165,8 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          socket
-         |> assign(:resource_paths, templates)
-         |> put_flash(:info, "Added path for \"#{resource_type}\"")}
+         |> put_flash(:info, "Added path for \"#{resource_type}\"")
+         |> load_settings()}
     end
   end
 
