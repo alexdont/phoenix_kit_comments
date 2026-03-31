@@ -241,6 +241,7 @@ defmodule PhoenixKitComments.Web.Settings do
   end
 
   defp build_config(path_template, ""), do: %{"path" => path_template}
+
   defp build_config(path_template, title_template),
     do: %{"path" => path_template, "title" => title_template}
 
