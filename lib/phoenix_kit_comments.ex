@@ -596,7 +596,8 @@ defmodule PhoenixKitComments do
           metadata = comment.metadata || %{}
           path = apply_path_template(path_template, comment.resource_uuid, metadata)
           title = resolve_title(title_template, resource_type, comment, metadata)
-          {comment.resource_uuid, %{title: title, path: path, prefixed: false}}
+          full_title = resolve_full_title(title_template, resource_type, comment, metadata)
+          {comment.resource_uuid, %{title: title, full_title: full_title, path: path, prefixed: false}}
         end)
     end
   end
@@ -608,6 +609,16 @@ defmodule PhoenixKitComments do
 
   defp resolve_title(title_template, _resource_type, comment, metadata) do
     apply_title_template(title_template, comment.resource_uuid, metadata)
+  end
+
+  defp resolve_full_title(nil, resource_type, comment, _metadata) do
+    "#{resource_type} #{comment.resource_uuid}"
+  end
+
+  defp resolve_full_title(title_template, _resource_type, comment, metadata) do
+    title_template
+    |> replace_metadata_placeholders(metadata)
+    |> String.replace(":uuid", to_string(comment.resource_uuid))
   end
 
   defp path_from_config(config) when is_binary(config), do: config
