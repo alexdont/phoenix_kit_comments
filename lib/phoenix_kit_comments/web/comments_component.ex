@@ -193,9 +193,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp do_save_edit(socket, comment, content) do
-    if not can_edit_comment?(socket.assigns.current_user, comment) do
-      {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
-    else
+    if can_edit_comment?(socket.assigns.current_user, comment) do
       case PhoenixKitComments.update_comment(comment, %{content: content}) do
         {:ok, _} ->
           {:noreply,
@@ -208,6 +206,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:error, _} ->
           {:noreply, put_flash(socket, :error, "Failed to update comment")}
       end
+    else
+      {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
     end
   end
 

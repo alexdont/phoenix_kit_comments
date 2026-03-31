@@ -58,6 +58,7 @@ defmodule PhoenixKitComments do
   alias PhoenixKit.Dashboard.Tab
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.Date, as: UtilsDate
+  alias PhoenixKit.Utils.Routes
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
   alias PhoenixKitComments.Comment
   alias PhoenixKitComments.CommentDislike
@@ -592,18 +593,19 @@ defmodule PhoenixKitComments do
         Map.new(comments, fn comment ->
           metadata = comment.metadata || %{}
           path = apply_path_template(path_template, comment.resource_uuid, metadata)
-
-          title =
-            if title_template do
-              apply_title_template(title_template, comment.resource_uuid, metadata)
-            else
-              short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
-              "#{resource_type} #{short_id}..."
-            end
-
+          title = resolve_title(title_template, resource_type, comment, metadata)
           {comment.resource_uuid, %{title: title, path: path, prefixed: false}}
         end)
     end
+  end
+
+  defp resolve_title(nil, resource_type, comment, _metadata) do
+    short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
+    "#{resource_type} #{short_id}..."
+  end
+
+  defp resolve_title(title_template, _resource_type, comment, metadata) do
+    apply_title_template(title_template, comment.resource_uuid, metadata)
   end
 
   defp path_from_config(config) when is_binary(config), do: config
@@ -629,7 +631,7 @@ defmodule PhoenixKitComments do
   end
 
   defp prefix_value do
-    prefix = PhoenixKit.Utils.Routes.url_prefix()
+    prefix = Routes.url_prefix()
     if prefix == "/", do: "", else: prefix
   end
 
