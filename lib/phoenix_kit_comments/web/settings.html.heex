@@ -199,8 +199,8 @@
 
         <%!-- Existing patterns --%>
         <%= if map_size(@resource_paths) > 0 do %>
-          <div class="overflow-x-auto mb-4">
-            <table class="table table-sm">
+          <div class="mb-4">
+            <table class="table table-sm table-fixed w-full">
               <thead>
                 <tr>
                   <th>Resource Type</th>
@@ -298,12 +298,12 @@
                       <td>
                         <span class="badge badge-ghost badge-sm">{resource_type}</span>
                       </td>
-                      <td>
-                        <code class="text-sm">{display_path}</code>
+                      <td class="max-w-[280px]">
+                        <code class="text-sm break-all">{display_path}</code>
                       </td>
-                      <td>
+                      <td class="max-w-[200px]">
                         <%= if display_title != "" do %>
-                          <code class="text-sm">{display_title}</code>
+                          <code class="text-sm break-all">{display_title}</code>
                         <% else %>
                           <span class="text-base-content/40 text-xs">UUID (default)</span>
                         <% end %>
