@@ -139,34 +139,35 @@
         if (window.PhoenixKitHooks.InsertAtCursor) return;
         window.PhoenixKitHooks.InsertAtCursor = {
           mounted() {
-            this._lastInputName = null;
+            this._lastInput = null;
             this._lastCursorPos = 0;
+            this._abortController = null;
             this.setup();
           },
           updated() { this.setup(); },
+          destroyed() {
+            if (this._abortController) this._abortController.abort();
+          },
           setup() {
+            if (this._abortController) this._abortController.abort();
+            this._abortController = new AbortController();
+            var signal = this._abortController.signal;
             var self = this;
             var container = this.el;
+            var trackCursor = function(input) {
+              self._lastInput = input;
+              self._lastCursorPos = input.selectionStart;
+            };
             container.querySelectorAll("textarea, input[type='text']").forEach(function(input) {
-              input.addEventListener("focus", function() {
-                self._lastInputName = input.name;
-              });
-              input.addEventListener("keyup", function() {
-                self._lastCursorPos = input.selectionStart;
-              });
-              input.addEventListener("click", function() {
-                self._lastCursorPos = input.selectionStart;
-              });
+              input.addEventListener("focus", function() { trackCursor(input); }, { signal: signal });
+              input.addEventListener("keyup", function() { trackCursor(input); }, { signal: signal });
+              input.addEventListener("click", function() { trackCursor(input); }, { signal: signal });
             });
             container.querySelectorAll("[data-field]").forEach(function(badge) {
               badge.style.cursor = "pointer";
-              badge.onclick = function(e) {
+              badge.addEventListener("click", function(e) {
                 e.preventDefault();
-                var input;
-                if (self._lastInputName) {
-                  input = container.querySelector("[name='" + self._lastInputName + "']");
-                }
-                input = input || container.querySelector("textarea, input[type='text']");
+                var input = self._lastInput || container.querySelector("textarea, input[type='text']");
                 if (!input) return;
                 var val = badge.dataset.field;
                 var pos = self._lastCursorPos || 0;
@@ -176,7 +177,7 @@
                 input.selectionStart = input.selectionEnd = newPos;
                 input.focus();
                 input.dispatchEvent(new Event("input", { bubbles: true }));
-              };
+              }, { signal: signal });
             });
           }
         };

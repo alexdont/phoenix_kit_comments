@@ -113,7 +113,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("reply_to", %{"id" => comment_uuid}, socket) do
-    {:noreply, assign(socket, :reply_to, comment_uuid)}
+    {:noreply,
+     socket
+     |> assign(:reply_to, comment_uuid)
+     |> assign(:editing_uuid, nil)
+     |> assign(:editing_content, "")}
   end
 
   @impl true
@@ -132,7 +136,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {:noreply,
            socket
            |> assign(:editing_uuid, comment_uuid)
-           |> assign(:editing_content, comment.content)}
+           |> assign(:editing_content, comment.content)
+           |> assign(:reply_to, nil)}
         else
           {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
         end
@@ -193,21 +198,37 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   defp do_save_edit(socket, comment, content) do
-    if can_edit_comment?(socket.assigns.current_user, comment) do
-      case PhoenixKitComments.update_comment(comment, %{content: content}) do
-        {:ok, _} ->
-          {:noreply,
-           socket
-           |> assign(:editing_uuid, nil)
-           |> assign(:editing_content, "")
-           |> load_comments()
-           |> put_flash(:info, "Comment updated")}
+    max_length = PhoenixKitComments.get_max_length()
+    content = String.trim(content)
 
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Failed to update comment")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
+    cond do
+      content == "" ->
+        {:noreply, put_flash(socket, :error, "Comment cannot be empty")}
+
+      String.length(content) > max_length ->
+        {:noreply,
+         put_flash(socket, :error, "Comment exceeds maximum length of #{max_length} characters")}
+
+      not can_edit_comment?(socket.assigns.current_user, comment) ->
+        {:noreply, put_flash(socket, :error, "You don't have permission to edit this comment")}
+
+      true ->
+        do_update_comment(socket, comment, content)
+    end
+  end
+
+  defp do_update_comment(socket, comment, content) do
+    case PhoenixKitComments.update_comment(comment, %{content: content}) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:editing_uuid, nil)
+         |> assign(:editing_content, "")
+         |> load_comments()
+         |> put_flash(:info, "Comment updated")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to update comment")}
     end
   end
 
