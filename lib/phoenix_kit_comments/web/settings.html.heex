@@ -548,50 +548,50 @@
         <% end %>
 
         <%!-- Add new pattern manually --%>
-        <.form
-          for={%{}}
-          phx-submit="add_resource_path"
-          class="grid grid-cols-1 md:grid-cols-[1fr_2fr_2fr_auto] gap-3 items-end"
-        >
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Resource Type</span>
-            </label>
-            <input
-              type="text"
-              name="resource_path[resource_type]"
-              placeholder="e.g. shoes"
-              class="input input-bordered input-sm"
-              required
-            />
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Path Template</span>
-            </label>
-            <input
-              type="text"
-              name="resource_path[path_template]"
-              placeholder="e.g. /order/shoes/:uuid"
-              class="input input-bordered input-sm"
-              required
-            />
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text text-sm">Display Title</span>
-            </label>
-            <input
-              type="text"
-              name="resource_path[title_template]"
-              placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
-              class="input input-bordered input-sm"
-            />
-          </div>
-          <button type="submit" class="btn btn-sm btn-outline btn-primary w-full md:w-auto">
-            <.icon name="hero-plus" class="w-4 h-4" /> Add
-          </button>
-        </.form>
+        <div class="bg-base-200 rounded-lg p-3">
+          <.form for={%{}} phx-submit="add_resource_path" class="space-y-2">
+            <div class="form-control">
+              <label class="label py-0">
+                <span class="label-text text-xs font-semibold">Resource Type</span>
+              </label>
+              <input
+                type="text"
+                name="resource_path[resource_type]"
+                placeholder="e.g. shoes"
+                class="input input-bordered input-sm w-full"
+                required
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-0">
+                <span class="label-text text-xs font-semibold">Path</span>
+              </label>
+              <input
+                type="text"
+                name="resource_path[path_template]"
+                placeholder="e.g. /order/shoes/:uuid"
+                class="input input-bordered input-sm w-full"
+                required
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-0">
+                <span class="label-text text-xs font-semibold">Display title</span>
+              </label>
+              <input
+                type="text"
+                name="resource_path[title_template]"
+                placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
+                class="input input-bordered input-sm w-full"
+              />
+            </div>
+            <div class="flex justify-end">
+              <button type="submit" class="btn btn-sm btn-outline btn-primary">
+                <.icon name="hero-plus" class="w-4 h-4" /> Add
+              </button>
+            </div>
+          </.form>
+        </div>
       </div>
     </div>
   </div>
