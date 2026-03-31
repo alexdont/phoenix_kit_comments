@@ -227,6 +227,8 @@ defmodule PhoenixKitComments.Web.Settings do
       |> Enum.reject(&Map.has_key?(resource_paths, &1))
       |> Enum.sort()
 
+    metadata_keys_by_type = PhoenixKitComments.list_metadata_keys_by_type()
+
     socket
     |> assign(:comments_enabled, Settings.get_setting("comments_enabled", "false"))
     |> assign(:comments_moderation, Settings.get_setting("comments_moderation", "false"))
@@ -235,6 +237,7 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:resource_paths, resource_paths)
     |> assign(:counts_by_type, counts_by_type)
     |> assign(:unconfigured_types, unconfigured_types)
+    |> assign(:metadata_keys_by_type, metadata_keys_by_type)
   end
 
   defp check_authorization(socket) do

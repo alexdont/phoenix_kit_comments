@@ -442,6 +442,27 @@ defmodule PhoenixKitComments do
       %{}
   end
 
+  @doc """
+  Returns distinct metadata keys grouped by resource type.
+
+  Queries the JSONB `metadata` column for all keys in use, e.g.:
+
+      %{"manga_annotation" => ["chapter", "page", "slug", "source"],
+        "post" => ["category"]}
+  """
+  def list_metadata_keys_by_type do
+    from(c in Comment,
+      where: c.metadata != ^%{},
+      select: {c.resource_type, fragment("jsonb_object_keys(?)", c.metadata)},
+      distinct: true
+    )
+    |> repo().all()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {type, keys} -> {type, Enum.sort(keys)} end)
+  rescue
+    _ -> %{}
+  end
+
   @doc "Returns aggregate statistics for all comments."
   def comment_stats do
     %{

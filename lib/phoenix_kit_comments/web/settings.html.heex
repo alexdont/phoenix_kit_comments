@@ -170,24 +170,34 @@
                         <.form
                           for={%{}}
                           phx-submit="save_resource_path"
-                          class="flex items-center gap-2"
+                          class="space-y-1"
                         >
-                          <textarea
-                            name="resource_path[path_template]"
-                            class="textarea textarea-bordered textarea-sm flex-1 min-h-[4rem]"
-                            rows="2"
-                            required
-                          ><%= path_template %></textarea>
-                          <button type="submit" class="btn btn-primary btn-xs">
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            phx-click="cancel_edit_resource_path"
-                            class="btn btn-ghost btn-xs"
-                          >
-                            Cancel
-                          </button>
+                          <div class="flex items-center gap-2">
+                            <textarea
+                              name="resource_path[path_template]"
+                              class="textarea textarea-bordered textarea-sm flex-1 min-h-[4rem]"
+                              rows="2"
+                              required
+                            ><%= path_template %></textarea>
+                            <button type="submit" class="btn btn-primary btn-xs">
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              phx-click="cancel_edit_resource_path"
+                              class="btn btn-ghost btn-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
+                            <div class="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-1">
+                              <span class="font-semibold">Available fields:</span>
+                              <%= for key <- keys do %>
+                                <span class="badge badge-info badge-xs font-mono gap-0.5">:metadata.{key}</span>
+                              <% end %>
+                            </div>
+                          <% end %>
                         </.form>
                       </td>
                     </tr>
@@ -259,6 +269,14 @@
                       class="input input-bordered input-sm"
                       required
                     />
+                    <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
+                      <div class="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-1">
+                        <span class="font-semibold">Available fields:</span>
+                        <%= for key <- keys do %>
+                          <span class="badge badge-info badge-xs font-mono gap-0.5">:metadata.{key}</span>
+                        <% end %>
+                      </div>
+                    <% end %>
                   </div>
                   <button type="submit" class="btn btn-sm btn-outline btn-warning">
                     <.icon name="hero-plus" class="w-4 h-4" /> Add
