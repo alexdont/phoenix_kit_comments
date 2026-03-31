@@ -138,19 +138,42 @@
         window.PhoenixKitHooks = window.PhoenixKitHooks || {};
         if (window.PhoenixKitHooks.InsertAtCursor) return;
         window.PhoenixKitHooks.InsertAtCursor = {
-          mounted() { this.setup(); },
+          mounted() {
+            this._lastInputName = null;
+            this._lastCursorPos = 0;
+            this.setup();
+          },
           updated() { this.setup(); },
           setup() {
-            this.el.querySelectorAll("[data-field]").forEach(function(badge) {
+            var self = this;
+            var container = this.el;
+            container.querySelectorAll("textarea, input[type='text']").forEach(function(input) {
+              input.addEventListener("focus", function() {
+                self._lastInputName = input.name;
+              });
+              input.addEventListener("keyup", function() {
+                self._lastCursorPos = input.selectionStart;
+              });
+              input.addEventListener("click", function() {
+                self._lastCursorPos = input.selectionStart;
+              });
+            });
+            container.querySelectorAll("[data-field]").forEach(function(badge) {
               badge.style.cursor = "pointer";
-              badge.onclick = function() {
-                var input = badge.closest("[phx-hook]").querySelector("textarea, input[type='text']");
+              badge.onclick = function(e) {
+                e.preventDefault();
+                var input;
+                if (self._lastInputName) {
+                  input = container.querySelector("[name='" + self._lastInputName + "']");
+                }
+                input = input || container.querySelector("textarea, input[type='text']");
                 if (!input) return;
                 var val = badge.dataset.field;
-                var start = input.selectionStart;
-                var end = input.selectionEnd;
-                input.value = input.value.slice(0, start) + val + input.value.slice(end);
-                input.selectionStart = input.selectionEnd = start + val.length;
+                var pos = self._lastCursorPos || 0;
+                input.value = input.value.slice(0, pos) + val + input.value.slice(pos);
+                var newPos = pos + val.length;
+                self._lastCursorPos = newPos;
+                input.selectionStart = input.selectionEnd = newPos;
                 input.focus();
                 input.dispatchEvent(new Event("input", { bubbles: true }));
               };
@@ -182,17 +205,20 @@
                 <tr>
                   <th>Resource Type</th>
                   <th>Path Template</th>
+                  <th>Display Template</th>
                   <th class="w-20"></th>
                 </tr>
               </thead>
               <tbody>
-                <%= for {resource_type, path_template} <- Enum.sort(@resource_paths) do %>
+                <%= for {resource_type, config} <- Enum.sort(@resource_paths) do %>
+                  <% display_path = extract_path(config) %>
+                  <% display_title = extract_title(config) %>
                   <%= if @editing_resource_type == resource_type do %>
                     <tr>
                       <td>
                         <span class="badge badge-ghost badge-sm">{resource_type}</span>
                       </td>
-                      <td colspan="2">
+                      <td colspan="3">
                         <div
                           id={"edit-path-#{resource_type}"}
                           phx-hook="InsertAtCursor"
@@ -201,31 +227,39 @@
                             for={%{}}
                             phx-submit="save_resource_path"
                             phx-change="live_edit_path"
-                            class="space-y-1"
+                            class="space-y-2"
                           >
-                            <div class="flex items-center gap-2">
-                              <textarea
-                                name="resource_path[path_template]"
-                                class="textarea textarea-bordered textarea-sm flex-1 min-h-[4rem]"
-                                rows="2"
-                                required
-                              ><%= @editing_path_value %></textarea>
-                              <button type="submit" class="btn btn-primary btn-xs">
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                phx-click="cancel_edit_resource_path"
-                                class="btn btn-ghost btn-xs"
-                              >
-                                Cancel
-                              </button>
+                            <div>
+                              <label class="label py-0">
+                                <span class="label-text text-xs font-semibold">Path</span>
+                              </label>
+                              <div class="flex items-center gap-2">
+                                <textarea
+                                  name="resource_path[path_template]"
+                                  class="textarea textarea-bordered textarea-sm flex-1 min-h-[4rem]"
+                                  rows="2"
+                                  required
+                                ><%= @editing_path_value %></textarea>
+                              </div>
+                            </div>
+                            <div>
+                              <label class="label py-0">
+                                <span class="label-text text-xs font-semibold">Display title</span>
+                              </label>
+                              <input
+                                type="text"
+                                name="resource_path[title_template]"
+                                value={@editing_title_value}
+                                placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
+                                class="input input-bordered input-sm w-full"
+                              />
                             </div>
                             <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
-                              <div class="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-1">
+                              <% combined = @editing_path_value <> @editing_title_value %>
+                              <div class="text-xs text-base-content/60 flex flex-wrap items-center gap-1">
                                 <span class="font-semibold">Available fields:</span>
                                 <%= for key <- keys do %>
-                                  <%= if String.contains?(@editing_path_value, ":metadata.#{key}") do %>
+                                  <%= if String.contains?(combined, ":metadata.#{key}") do %>
                                     <span
                                       class="badge badge-success badge-xs font-mono gap-0.5"
                                       data-field={":metadata.#{key}"}
@@ -243,6 +277,18 @@
                                 <% end %>
                               </div>
                             <% end %>
+                            <div class="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                phx-click="cancel_edit_resource_path"
+                                class="btn btn-ghost btn-xs"
+                              >
+                                Cancel
+                              </button>
+                              <button type="submit" class="btn btn-primary btn-xs">
+                                Save
+                              </button>
+                            </div>
                           </.form>
                         </div>
                       </td>
@@ -253,7 +299,14 @@
                         <span class="badge badge-ghost badge-sm">{resource_type}</span>
                       </td>
                       <td>
-                        <code class="text-sm">{path_template}</code>
+                        <code class="text-sm">{display_path}</code>
+                      </td>
+                      <td>
+                        <%= if display_title != "" do %>
+                          <code class="text-sm">{display_title}</code>
+                        <% else %>
+                          <span class="text-base-content/40 text-xs">UUID (default)</span>
+                        <% end %>
                       </td>
                       <td>
                         <div class="flex gap-1">
@@ -311,22 +364,33 @@
                   <div
                     id={"draft-path-#{resource_type}"}
                     phx-hook="InsertAtCursor"
-                    class="form-control flex-1 min-w-48"
+                    class="flex-1 min-w-48 space-y-1"
                   >
-                    <input
-                      type="text"
-                      name="resource_path[path_template]"
-                      value={Map.get(@draft_paths, resource_type, "")}
-                      placeholder={"e.g. /#{resource_type}/:uuid"}
-                      class="input input-bordered input-sm"
-                      required
-                    />
+                    <div class="form-control">
+                      <input
+                        type="text"
+                        name="resource_path[path_template]"
+                        value={Map.get(@draft_paths, resource_type, "")}
+                        placeholder={"e.g. /#{resource_type}/:uuid"}
+                        class="input input-bordered input-sm"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <input
+                        type="text"
+                        name="resource_path[title_template]"
+                        value={Map.get(@draft_titles, resource_type, "")}
+                        placeholder="Display title (e.g. :metadata.slug)"
+                        class="input input-bordered input-sm"
+                      />
+                    </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
-                      <% draft = Map.get(@draft_paths, resource_type, "") %>
+                      <% combined = Map.get(@draft_paths, resource_type, "") <> Map.get(@draft_titles, resource_type, "") %>
                       <div class="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-1">
                         <span class="font-semibold">Available fields:</span>
                         <%= for key <- keys do %>
-                          <%= if String.contains?(draft, ":metadata.#{key}") do %>
+                          <%= if String.contains?(combined, ":metadata.#{key}") do %>
                             <span
                               class="badge badge-success badge-xs font-mono gap-0.5"
                               data-field={":metadata.#{key}"}
@@ -380,6 +444,17 @@
               placeholder="e.g. /order/shoes/:uuid"
               class="input input-bordered input-sm"
               required
+            />
+          </div>
+          <div class="form-control flex-[2] min-w-48">
+            <label class="label">
+              <span class="label-text text-sm">Display Title</span>
+            </label>
+            <input
+              type="text"
+              name="resource_path[title_template]"
+              placeholder="e.g. :metadata.slug - Ch. :metadata.chapter"
+              class="input input-bordered input-sm"
             />
           </div>
           <button type="submit" class="btn btn-sm btn-outline btn-primary">

@@ -479,14 +479,16 @@ defmodule PhoenixKitComments do
   # ============================================================================
 
   @doc """
-  Gets configured URL path templates for resource types.
+  Gets configured resource templates (path + optional display title).
 
-  Returns a map of `resource_type => path_template`, e.g.:
+  Returns a map of `resource_type => config`, where config is either:
+  - A plain string (legacy path-only format)
+  - A map with `"path"` and optional `"title"` keys
 
-      %{"shoes" => "/order/shoes/:uuid", "ticket" => "/support/:uuid"}
+  ## Examples
 
-  Templates use `:uuid` as a placeholder that gets replaced with the actual
-  resource UUID when building links in the admin UI.
+      %{"shoes" => "/order/shoes/:uuid"}
+      %{"shoes" => %{"path" => "/order/shoes/:uuid", "title" => ":metadata.name"}}
   """
   def get_resource_path_templates do
     Settings.get_json_setting("comment_resource_paths", %{})
@@ -497,14 +499,9 @@ defmodule PhoenixKitComments do
   end
 
   @doc """
-  Updates URL path templates for resource types.
+  Updates resource templates for resource types.
 
-  ## Example
-
-      PhoenixKitComments.update_resource_path_templates(%{
-        "shoes" => "/order/shoes/:uuid",
-        "ticket" => "/support/tickets/:uuid"
-      })
+  Accepts both legacy string values and new map values with `"path"` and `"title"` keys.
   """
   def update_resource_path_templates(templates) when is_map(templates) do
     Settings.update_json_setting("comment_resource_paths", templates)
@@ -588,21 +585,45 @@ defmodule PhoenixKitComments do
       nil ->
         %{}
 
-      template ->
+      config ->
+        path_template = path_from_config(config)
+        title_template = title_from_config(config)
+
         Map.new(comments, fn comment ->
           metadata = comment.metadata || %{}
-          path = apply_path_template(template, comment.resource_uuid, metadata)
-          short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
+          path = apply_path_template(path_template, comment.resource_uuid, metadata)
 
-          {comment.resource_uuid,
-           %{title: "#{resource_type} #{short_id}...", path: path, prefixed: false}}
+          title =
+            if title_template do
+              apply_title_template(title_template, comment.resource_uuid, metadata)
+            else
+              short_id = comment.resource_uuid |> to_string() |> String.slice(0..7)
+              "#{resource_type} #{short_id}..."
+            end
+
+          {comment.resource_uuid, %{title: title, path: path, prefixed: false}}
         end)
     end
   end
 
+  defp path_from_config(config) when is_binary(config), do: config
+  defp path_from_config(%{"path" => path}), do: path
+  defp path_from_config(_), do: ""
+
+  defp title_from_config(config) when is_binary(config), do: nil
+  defp title_from_config(%{"title" => ""}), do: nil
+  defp title_from_config(%{"title" => title}), do: title
+  defp title_from_config(_), do: nil
+
   defp apply_path_template(template, resource_uuid, metadata) do
     template
     |> String.replace(":prefix", prefix_value())
+    |> String.replace(":uuid", to_string(resource_uuid))
+    |> replace_metadata_placeholders(metadata)
+  end
+
+  defp apply_title_template(template, resource_uuid, metadata) do
+    template
     |> String.replace(":uuid", to_string(resource_uuid))
     |> replace_metadata_placeholders(metadata)
   end
