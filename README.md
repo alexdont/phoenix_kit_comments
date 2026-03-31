@@ -22,7 +22,7 @@ Add `phoenix_kit_comments` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_comments, "~> 0.1.0"}
+    {:phoenix_kit_comments, "~> 0.1"}
   ]
 end
 ```

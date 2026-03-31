@@ -4,26 +4,53 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ## Unreleased
 
+## 0.1.1 — 2026-03-31
+
 ### Features
 
-- Add resource path templates with metadata placeholder support. Admins can configure URL patterns
-  per resource type in settings (e.g. `/order/shoes/:uuid`). Templates support `:uuid` and
-  `:metadata.KEY` placeholders for building links from comment metadata. Shows unconfigured
-  resource types from the DB with comment counts for easy setup.
+- Add `:prefix` placeholder for resource path templates — paths no longer auto-prefix with
+  `Routes.path()`; include `:prefix` in your template to get the site URL prefix.
+- Add configurable display title templates for resource types — show meaningful names instead of
+  truncated UUIDs in the admin comment list.
+- Add inline editing for resource link patterns in settings (edit button, save/cancel).
+- Add inline comment content editing in CommentsComponent (edit button, save/cancel).
+- Add clickable metadata field badges with live color updates — green when used in the template,
+  gray when unused. Clicking inserts the placeholder at cursor position.
+- Add `list_metadata_keys_by_type/0` — queries distinct JSONB metadata keys per resource type
+  for display in settings.
 
 ### Bug Fixes
 
+- Fix placeholder collision — `:metadata.prefix` and `:metadata.uuid` were corrupted by naive
+  substring replacement. Metadata placeholders are now resolved first.
+- Fix event listener accumulation in InsertAtCursor JS hook — listeners were re-added on every
+  LiveView patch without cleanup. Now uses `AbortController` for proper teardown.
+- Fix XSS vector in InsertAtCursor hook — replaced `querySelector` built from input name string
+  with direct element reference.
+- Fix missing server-side content validation on comment edits — now enforces empty check and
+  configurable `comments_max_length` setting (previously only enforced on creation).
+- Fix edit/reply state collision in CommentsComponent — entering edit mode now clears reply state
+  and vice versa.
+- Fix `editing_path_value` not cleared after saving resource path edit.
+- Fix draft state (`draft_paths`/`draft_titles`) not cleaned up after adding unconfigured type.
+- Add `Logger.warning` to `list_metadata_keys_by_type/0` rescue block instead of silently
+  swallowing errors.
 - Fix nested forms in settings page — Resource Link Patterns card was rendered inside the main
-  settings `<form>`, producing invalid HTML. Moved outside the form to prevent unpredictable
-  browser behavior.
+  settings `<form>`, producing invalid HTML. Moved outside the form.
 - Fix stale assigns after adding/removing resource path templates — `unconfigured_types` now
   stays in sync without requiring a page refresh.
-- Add path template input validation — templates must start with `/` and cannot contain `://`,
-  preventing XSS via `javascript:` URIs and open redirects via protocol-relative URLs.
+- Add path template input validation — templates must start with `/` or `:prefix` and cannot
+  contain `://`, preventing XSS via `javascript:` URIs and open redirects.
 - Add `Logger.warning` to rescue blocks in `count_comments_by_type/0` and
   `get_resource_path_templates/0` instead of silently swallowing errors.
 
-## v0.1.0 — 2026-03-27
+### Improvements
+
+- Deduplicate resource path add/save logic into shared `save_resource_config/5`.
+- Make `extract_path/1` and `extract_title/1` private (only used within settings module).
+- Resource path table uses `table-fixed` with `break-all` to handle long templates.
+
+## 0.1.0 — 2026-03-27
 
 ### Features
 

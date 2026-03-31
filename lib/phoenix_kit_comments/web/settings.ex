@@ -201,20 +201,12 @@ defmodule PhoenixKitComments.Web.Settings do
     path_template = String.trim(params["path_template"] || "")
     title_template = String.trim(params["title_template"] || "")
 
-    case validate_resource_path(resource_type, path_template) do
-      :ok ->
-        config = build_config(path_template, title_template)
-        templates = Map.put(socket.assigns.resource_paths, resource_type, config)
-        PhoenixKitComments.update_resource_path_templates(templates)
-
-        {:noreply,
-         socket
-         |> put_flash(:info, "Added path for \"#{resource_type}\"")
-         |> load_settings()}
-
-      {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
-    end
+    save_resource_config(socket, resource_type, path_template, title_template, fn socket ->
+      socket
+      |> assign(:draft_paths, Map.delete(socket.assigns.draft_paths, resource_type))
+      |> assign(:draft_titles, Map.delete(socket.assigns.draft_titles, resource_type))
+      |> put_flash(:info, "Added path for \"#{resource_type}\"")
+    end)
   end
 
   defp do_save_resource_path(socket, params) do
@@ -222,6 +214,16 @@ defmodule PhoenixKitComments.Web.Settings do
     path_template = String.trim(params["path_template"] || "")
     title_template = String.trim(params["title_template"] || "")
 
+    save_resource_config(socket, resource_type, path_template, title_template, fn socket ->
+      socket
+      |> assign(:editing_resource_type, nil)
+      |> assign(:editing_path_value, "")
+      |> assign(:editing_title_value, "")
+      |> put_flash(:info, "Updated path for \"#{resource_type}\"")
+    end)
+  end
+
+  defp save_resource_config(socket, resource_type, path_template, title_template, on_success) do
     case validate_resource_path(resource_type, path_template) do
       :ok ->
         config = build_config(path_template, title_template)
@@ -230,9 +232,7 @@ defmodule PhoenixKitComments.Web.Settings do
 
         {:noreply,
          socket
-         |> assign(:editing_resource_type, nil)
-         |> assign(:editing_title_value, "")
-         |> put_flash(:info, "Updated path for \"#{resource_type}\"")
+         |> on_success.()
          |> load_settings()}
 
       {:error, message} ->
@@ -289,13 +289,13 @@ defmodule PhoenixKitComments.Web.Settings do
     |> assign(:metadata_keys_by_type, metadata_keys_by_type)
   end
 
-  def extract_path(config) when is_binary(config), do: config
-  def extract_path(%{"path" => path}), do: path
-  def extract_path(_), do: ""
+  defp extract_path(config) when is_binary(config), do: config
+  defp extract_path(%{"path" => path}), do: path
+  defp extract_path(_), do: ""
 
-  def extract_title(config) when is_binary(config), do: ""
-  def extract_title(%{"title" => title}) when is_binary(title), do: title
-  def extract_title(_), do: ""
+  defp extract_title(config) when is_binary(config), do: ""
+  defp extract_title(%{"title" => title}) when is_binary(title), do: title
+  defp extract_title(_), do: ""
 
   defp check_authorization(socket) do
     scope = socket.assigns[:phoenix_kit_current_scope]

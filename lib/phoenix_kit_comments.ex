@@ -127,7 +127,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: "0.1.0"
+  def version, do: "0.1.1"
 
   @impl PhoenixKit.Module
   def permission_metadata do
@@ -461,7 +461,9 @@ defmodule PhoenixKitComments do
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     |> Map.new(fn {type, keys} -> {type, Enum.sort(keys)} end)
   rescue
-    _ -> %{}
+    e ->
+      Logger.warning("Failed to load metadata keys by type: #{inspect(e)}")
+      %{}
   end
 
   @doc "Returns aggregate statistics for all comments."
@@ -619,15 +621,15 @@ defmodule PhoenixKitComments do
 
   defp apply_path_template(template, resource_uuid, metadata) do
     template
+    |> replace_metadata_placeholders(metadata)
     |> String.replace(":prefix", prefix_value())
     |> String.replace(":uuid", to_string(resource_uuid))
-    |> replace_metadata_placeholders(metadata)
   end
 
   defp apply_title_template(template, resource_uuid, metadata) do
     template
-    |> String.replace(":uuid", truncate_value(to_string(resource_uuid)))
     |> replace_metadata_truncated(metadata)
+    |> String.replace(":uuid", truncate_value(to_string(resource_uuid)))
   end
 
   defp prefix_value do
