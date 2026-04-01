@@ -144,11 +144,22 @@
       }
     >
       <:card_actions :let={comment}>
+        <%= case resource_info(@resource_context, comment) do %>
+          <% %{path: path, prefixed: true} -> %>
+            <.link navigate={Routes.path(path)} class="btn btn-sm btn-outline btn-info">
+              <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
+            </.link>
+          <% %{path: path} -> %>
+            <.link navigate={path} class="btn btn-sm btn-outline btn-info">
+              <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" /> {gettext("View")}
+            </.link>
+          <% _ -> %>
+        <% end %>
         <%= if comment.status != "published" do %>
           <button
             phx-click="approve"
             phx-value-uuid={comment.uuid}
-            class="btn btn-xs btn-outline btn-success"
+            class="btn btn-sm btn-outline btn-success"
           >
             {gettext("Approve")}
           </button>
@@ -157,7 +168,7 @@
           <button
             phx-click="hide"
             phx-value-uuid={comment.uuid}
-            class="btn btn-xs btn-outline btn-warning"
+            class="btn btn-sm btn-outline btn-warning"
           >
             {gettext("Hide")}
           </button>
@@ -165,7 +176,7 @@
         <button
           phx-click="delete"
           phx-value-uuid={comment.uuid}
-          class="btn btn-xs btn-outline btn-error"
+          class="btn btn-sm btn-outline btn-error"
           data-confirm="Delete this comment?"
         >
           {gettext("Delete")}
