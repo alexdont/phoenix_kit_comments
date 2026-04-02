@@ -175,7 +175,7 @@ defmodule PhoenixKitComments do
   end
 
   @impl PhoenixKit.Module
-  def css_sources, do: ["phoenix_kit_comments"]
+  def css_sources, do: [:phoenix_kit_comments]
 
   # ============================================================================
   # Comment CRUD
