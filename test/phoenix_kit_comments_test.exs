@@ -111,7 +111,7 @@ defmodule PhoenixKitCommentsTest do
     test "returns a version string" do
       version = PhoenixKitComments.version()
       assert is_binary(version)
-      assert version == "0.1.1"
+      assert version == "0.1.3"
     end
   end
 

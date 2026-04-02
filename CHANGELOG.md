@@ -4,6 +4,14 @@ All notable changes to PhoenixKitComments will be documented in this file.
 
 ## Unreleased
 
+## 0.1.3 — 2026-04-02
+
+### Improvements
+
+- Migrate select elements to daisyUI 5 label wrapper pattern and remove deprecated
+  `select-bordered` class.
+- Mobile-responsive admin filter bar with separate mobile/desktop layouts.
+
 ## 0.1.2 — 2026-03-31
 
 ### Features
