@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 - 2026-04-12
+
+### Fixed
+- Add routing anti-pattern warning to AGENTS.md
+
+
 All notable changes to PhoenixKitComments will be documented in this file.
 
 ## Unreleased

@@ -127,7 +127,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: "0.1.3"
+  def version, do: "0.1.4"
 
   @impl PhoenixKit.Module
   def permission_metadata do
