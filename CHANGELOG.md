@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.5 - 2026-04-16
+
+### Features
+- Optional Giphy integration for the comment form. Users can post text-only,
+  GIF-only, or text + GIF comments via a floating Giphy picker; the selected GIF
+  is stored on `comment.metadata["giphy"]` and rendered inline with the comment.
+- New admin settings under `/admin/settings/comments` → "Giphy Integration":
+  enable toggle, API key (stored in DB), and content rating filter (G/PG/PG-13/R).
+- `:form_extras` slot on `CommentsComponent` — parent projects can inject their
+  own inputs into the new-comment form and any `name="metadata[<key>]"` values
+  are merged into `comment.metadata` on submit (the `"giphy"` key is reserved).
+- Character counter and Cancel button added to the top-level comment form.
+
+### Breaking
+
+- `Comment.changeset/2` no longer requires `:content`; either `content` or a GIF
+  attachment in `metadata["giphy"]` is accepted. Downstream consumers that built
+  their own changeset relying on the `content can't be blank` error should check
+  the new validation path.
+
 ## 0.1.4 - 2026-04-12
 
 ### Fixed
