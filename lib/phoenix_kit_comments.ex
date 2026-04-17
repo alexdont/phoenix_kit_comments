@@ -149,20 +149,28 @@ defmodule PhoenixKitComments do
         {:ok, []}
 
       trimmed ->
-        rating = get_giphy_rating()
-        limit = Keyword.get(opts, :limit, 24)
+        case get_giphy_api_key() do
+          "" ->
+            {:error, :missing_api_key}
 
-        Application.put_env(:giphy_api, :api_key, get_giphy_api_key())
+          api_key ->
+            rating = get_giphy_rating()
+            limit = Keyword.get(opts, :limit, 24)
 
-        try do
-          case GiphyApi.search(trimmed, rating: rating, limit: limit) do
-            {:ok, results} -> {:ok, Enum.map(results, &normalize_giphy_gif/1)}
-            {:error, _} = err -> err
-          end
-        rescue
-          e ->
-            Logger.warning("Giphy search failed: #{inspect(e)}")
-            {:error, :giphy_error}
+            try do
+              case GiphyApi.search(trimmed,
+                     api_key: api_key,
+                     rating: rating,
+                     limit: limit
+                   ) do
+                {:ok, results} -> {:ok, Enum.map(results, &normalize_giphy_gif/1)}
+                {:error, _} = err -> err
+              end
+            rescue
+              e ->
+                Logger.warning("Giphy search failed: #{inspect(e)}")
+                {:error, :giphy_error}
+            end
         end
     end
   end
@@ -188,7 +196,7 @@ defmodule PhoenixKitComments do
   def module_name, do: "Comments"
 
   @impl PhoenixKit.Module
-  def version, do: "0.1.5"
+  def version, do: "0.1.6"
 
   @impl PhoenixKit.Module
   def permission_metadata do

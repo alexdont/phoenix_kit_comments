@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
-  @version "0.1.5"
+  @version "0.1.6"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
@@ -55,7 +55,7 @@ defmodule PhoenixKitComments.MixProject do
       {:phoenix_live_view, "~> 1.1"},
 
       # Giphy API client used by the optional Giphy picker in the comment form.
-      {:giphy_api, "~> 0.1"},
+      {:giphy_api, "~> 0.1.1"},
 
       # Optional: add ex_doc for generating documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

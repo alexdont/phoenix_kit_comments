@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6 - 2026-04-17
+
+### Fixed
+
+- Drop `Application.put_env(:giphy_api, :api_key, ...)` in
+  `PhoenixKitComments.search_giphy/2`. The key is now passed per-call via
+  `giphy_api` 0.1.1's new `:api_key` option — no more global write on each
+  search. Also guards against empty API keys at the wrapper level.
+
+### Dependencies
+
+- Bump `giphy_api` from `~> 0.1` to `~> 0.1.1`.
+
 ## 0.1.5 - 2026-04-16
 
 ### Features
