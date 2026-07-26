@@ -214,6 +214,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # Effective editor choice: rich text only when the host wants it AND
       # Leaf is loaded. All composer/edit/submit paths key off this.
       |> then(&assign(&1, :leaf_editor?, &1.assigns.rich_text and leaf_available?()))
+      # Site-wide default editor mode (admin-set under Settings → Content
+      # Editor); passed to every Leaf instance this component renders.
+      |> assign(:editor_mode, PhoenixKit.Settings.get_editor_mode())
 
     # Seed collapse state once from initial_collapsed, then leave it
     # alone. assign_new only fires when :collapsed? is absent, so the
@@ -1161,6 +1164,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 module={Leaf}
                 id={edit_editor_id(@component_id, @comment.uuid)}
                 content={@editing_content || ""}
+                mode={@ctx.editor_mode}
                 preset={:advanced}
                 placeholder={gettext("Edit your comment...")}
                 height="200px"
@@ -1598,6 +1602,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           module={Leaf}
           id={@editor_id}
           content={@ctx.new_comment || ""}
+          mode={@ctx.editor_mode}
           preset={:advanced}
           placeholder={@placeholder}
           height="200px"
