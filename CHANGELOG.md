@@ -2,6 +2,57 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.2.15 — 2026-07-27
+
+### Added
+
+- **Comment editors open in the admin-configured default mode (PR #30).** Both
+  the composer and the inline edit form pass the site-wide editor mode (set
+  under Settings → Content Editor in core) to Leaf, instead of always opening in
+  Leaf's `:hybrid` default.
+- **Named-schema (`--prefix`) support at runtime (PR #29).** Every table-backed
+  schema (`Comment`, `CommentLike`, `CommentDislike`, `CommentMedia`) compiles in
+  `PhoenixKit.SchemaPrefix`, so on a prefixed install this module's queries
+  target the named schema directly rather than relying on the DB role's
+  `search_path`. No behaviour change for unprefixed installs. A conformance test
+  scans `lib/` so future table-backed schemas can't silently skip the attribute.
+
+### Changed
+
+- **Moderation dashboard bulk-select moved client-side (PR #29).** Per-checkbox
+  `phx-click` round-trips and the `selected_uuids` assign are replaced by core's
+  `BulkSelect` components and the `BulkSelectScope` JS hook — selection lives in
+  the browser and the server only learns the UUIDs when a toolbar button is
+  clicked. Adds a header "select all" checkbox; `bulk_action` splits into
+  `bulk_approve` / `bulk_hide` / `bulk_delete_comments`, all keeping the same
+  authorization gate and the delete confirmation.
+
+### Fixed
+
+- **Comments component no longer crashes on the editor-mode lookup (post-merge
+  review of PR #30).** The merged code called
+  `PhoenixKit.Settings.get_editor_mode/0`, which does not exist in any
+  phoenix_kit release the `~> 1.7.189` pin can resolve (latest is 1.7.213) —
+  raising `UndefinedFunctionError` in `update/2` on **every** render of every
+  comments embed. The lookup is now capability-probed and falls back to Leaf's
+  `:hybrid` default on older cores, and starts honouring the setting
+  automatically once core ships it.
+- **Editor mode is normalized before it reaches Leaf.** Leaf's `:mode` clauses
+  have no catch-all, so a string setting value (the shape settings round-trip
+  as) or an unrecognised mode would raise `FunctionClauseError` inside Leaf.
+  Values are now coerced to one of `:visual` / `:hybrid` / `:markdown` / `:html`,
+  with test coverage pinning the contract.
+- **Editor mode is read once per component lifetime** instead of on every
+  `update/2` — Leaf only honours `:mode` on its first render, so the repeated
+  settings lookup on each parent re-render / `send_update` was pure cost.
+
+### Dependencies
+
+- Bump the `phoenix_kit` floor to `~> 1.7.189` (provides `PhoenixKit.SchemaPrefix`).
+- Drop the orphaned `:beamlab_ex_aws_sqs` entry from `mix.lock`, which made
+  `mix deps.unlock --check-unused` (and therefore `mix precommit`) fail. No
+  change to the resolved dependency set.
+
 ## 0.2.14 — 2026-07-10
 
 ### Changed

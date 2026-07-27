@@ -152,6 +152,32 @@ defmodule PhoenixKitCommentsTest do
     end
   end
 
+  describe "editor mode normalization" do
+    # Leaf's `:mode` clauses have no catch-all, so whatever the core
+    # setting hands back must be coerced to one of its four atoms before
+    # it reaches the editor. Keep this list in sync with Leaf's
+    # `attr(:mode, :atom, values: [...])`.
+    alias PhoenixKitComments.Web.CommentsComponent
+
+    test "passes through every mode Leaf accepts" do
+      for mode <- [:visual, :hybrid, :markdown, :html] do
+        assert CommentsComponent.__normalize_editor_mode__(mode) == mode
+      end
+    end
+
+    test "converts the string form settings round-trip through" do
+      for mode <- [:visual, :hybrid, :markdown, :html] do
+        assert CommentsComponent.__normalize_editor_mode__(to_string(mode)) == mode
+      end
+    end
+
+    test "falls back to :hybrid for anything Leaf would not match" do
+      for value <- [nil, "", "wysiwyg", :wysiwyg, 42, %{}] do
+        assert CommentsComponent.__normalize_editor_mode__(value) == :hybrid
+      end
+    end
+  end
+
   describe "batch count_comments/3" do
     test "empty uuid list returns an empty map" do
       assert PhoenixKitComments.count_comments("post", []) == %{}

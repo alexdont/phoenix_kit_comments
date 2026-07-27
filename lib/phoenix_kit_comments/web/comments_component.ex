@@ -68,6 +68,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # behavior is guarded by `leaf_available?/0`.
   @compile {:no_warn_undefined, [Leaf]}
 
+  # `get_editor_mode/0` only exists in newer phoenix_kit builds, but our
+  # pin still allows older ones — `default_editor_mode/0` probes for it at
+  # runtime, so the compiler shouldn't flag the call in the meantime.
+  @compile {:no_warn_undefined, {PhoenixKit.Settings, :get_editor_mode, 0}}
+
+  # The modes Leaf's `:mode` attr accepts, and the one Leaf itself
+  # defaults to. Anything outside this list must never reach Leaf —
+  # its mode clauses have no catch-all.
+  @leaf_editor_modes [:visual, :hybrid, :markdown, :html]
+  @default_editor_mode :hybrid
+
   @impl true
   def mount(socket) do
     max_size_mb = PhoenixKitComments.get_max_attachment_size_mb()
@@ -216,7 +227,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       |> then(&assign(&1, :leaf_editor?, &1.assigns.rich_text and leaf_available?()))
       # Site-wide default editor mode (admin-set under Settings → Content
       # Editor); passed to every Leaf instance this component renders.
-      |> assign(:editor_mode, PhoenixKit.Settings.get_editor_mode())
+      # Seeded once: Leaf only honours `:mode` on its first render, so
+      # re-reading the setting on every update/2 would cost a settings
+      # lookup per parent re-render and change nothing on screen.
+      |> assign_new(:editor_mode, &default_editor_mode/0)
 
     # Seed collapse state once from initial_collapsed, then leave it
     # alone. assign_new only fires when :collapsed? is absent, so the
@@ -1960,6 +1974,36 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp primary_composer_position(_), do: :top
 
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
+
+  # Site-wide default editor mode for every Leaf instance we render.
+  # `PhoenixKit.Settings.get_editor_mode/0` only exists in newer core
+  # builds, but our pin allows older ones — so probe for the function
+  # before calling it (the `no_warn_undefined` above covers the compile
+  # side). Leaf's `:mode` clauses have no catch-all, so a string setting
+  # value or anything unrecognised is normalised here rather than blowing
+  # up inside Leaf's update/2. Settings reads can also raise when no repo
+  # is configured, same as `PhoenixKitComments.enabled?/0` — hence the
+  # rescue.
+  defp default_editor_mode do
+    if Code.ensure_loaded?(PhoenixKit.Settings) and
+         function_exported?(PhoenixKit.Settings, :get_editor_mode, 0) do
+      __normalize_editor_mode__(PhoenixKit.Settings.get_editor_mode())
+    else
+      @default_editor_mode
+    end
+  rescue
+    _ -> @default_editor_mode
+  end
+
+  @doc false
+  # Public only so the mode contract can be pinned by a unit test.
+  def __normalize_editor_mode__(mode) when mode in @leaf_editor_modes, do: mode
+
+  def __normalize_editor_mode__(mode) when is_binary(mode) do
+    Enum.find(@leaf_editor_modes, @default_editor_mode, &(to_string(&1) == mode))
+  end
+
+  def __normalize_editor_mode__(_mode), do: @default_editor_mode
 
   # Draft editor id is position-scoped (:top / :bottom) so a
   # composer_position: :both embed never mounts two Leaf editors under
