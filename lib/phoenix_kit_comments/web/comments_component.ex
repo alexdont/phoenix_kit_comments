@@ -153,6 +153,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # `comments_rich_text` setting (default true). The effective
       # `:leaf_editor?` below also requires Leaf to actually be loaded.
       |> assign_new(:rich_text, fn -> PhoenixKitComments.rich_text_enabled?() end)
+      # The @/# typeahead, on the PLAIN textarea only: the rich editor owns
+      # its own key handling, and a second listener fighting it for the
+      # caret is how you get a composer that eats keystrokes.
+      |> assign_new(:mentions_on, fn ->
+        Code.ensure_loaded?(PhoenixKit.Mentions) and PhoenixKit.Mentions.enabled?()
+      end)
+      # Built ONCE per render, not per comment: resolving a mention needs a
+      # scope (permissions, not just a uuid), and Scope.for_user/1 reads the
+      # database — doing it inside the comment loop would be one query per
+      # comment on every page.
+      |> assign_new(:pk_scope, fn -> nil end)
       # Header presentation. `show_title` renders the
       # "{title} ({count})" line; `collapsible` turns that line into a
       # disclosure toggle for the whole body; `initial_collapsed` is the
@@ -219,6 +230,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # when an annotation is drawn) — would otherwise read nil and flip
       # the composer to "Sign in to post a comment" for a logged-in user.
       |> then(&assign(&1, :can_post?, &1.assigns.current_user != nil))
+      |> then(
+        &assign(&1, :pk_scope, &1.assigns[:pk_scope] || viewer_scope(&1.assigns.current_user))
+      )
       |> assign(:giphy_enabled?, PhoenixKitComments.giphy_enabled?())
       |> assign(:attachments_enabled?, PhoenixKitComments.attachments_enabled?())
       |> assign(:max_length, PhoenixKitComments.get_max_length())
@@ -767,7 +781,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                socket.assigns.current_user.uuid,
                attrs
              ) do
-          {:ok, _comment} ->
+          {:ok, comment} ->
+            sync_mentions(comment, socket.assigns.current_user.uuid)
+
             reset_leaf_draft_editor(
               socket.assigns.leaf_editor?,
               socket.assigns.id,
@@ -872,7 +888,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp do_update_comment(socket, comment, content) do
     case PhoenixKitComments.update_comment(comment, %{content: content}) do
-      {:ok, _} ->
+      {:ok, updated} ->
+        # An edit that ADDS a mention pings; one that only reshuffles text
+        # already mentioning someone pings nobody, because sync/4 returns
+        # what is new and delivery is claimed once.
+        sync_mentions(updated, socket.assigns.current_user.uuid)
+
         {:noreply,
          socket
          |> assign(:editing_uuid, nil)
@@ -1003,6 +1024,60 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   # Heuristic for "this comment body is long enough to clamp + offer Read more":
   # several lines, or a long single block that would wrap past the clamp.
+  # Rewrites @ and # tokens as markdown for the person reading. A no-op
+  # when core is too old to have mentions, or the text has none.
+  defp resolve_mentions(content, assigns) do
+    if Code.ensure_loaded?(PhoenixKit.Mentions) do
+      PhoenixKit.Mentions.to_markdown(content,
+        scope: assigns[:pk_scope],
+        user_uuid: assigns[:current_user] && assigns.current_user.uuid
+      )
+    else
+      content
+    end
+  rescue
+    _ -> content
+  end
+
+  # Indexes the comment's mentions and delivers its @ pings — on the
+  # durable create, never on a draft keystroke. Wrapped so a mention
+  # failure can never cost someone their comment.
+  defp sync_mentions(comment, actor_uuid) do
+    if Code.ensure_loaded?(PhoenixKit.Mentions) do
+      case PhoenixKit.Mentions.sync("comment", comment.uuid, comment.content,
+             field: "content",
+             actor_uuid: actor_uuid
+           ) do
+        {:ok, new} ->
+          PhoenixKit.Mentions.notify(new,
+            source_type: comment.resource_type,
+            source_uuid: comment.resource_uuid,
+            preview: comment.content
+          )
+
+        _ ->
+          :ok
+      end
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  # A full scope for the person reading, so a handler can answer questions
+  # that need permissions (a site admin sees more than their memberships).
+  # nil for an anonymous reader, which resolves to "sees nothing private".
+  defp viewer_scope(nil), do: nil
+
+  defp viewer_scope(user) do
+    PhoenixKit.Users.Auth.Scope.for_user(user)
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
   defp long_comment?(content) when is_binary(content) do
     trimmed = String.trim(content)
     String.length(trimmed) > 280 or length(String.split(trimmed, "\n")) > 4
@@ -1194,6 +1269,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 class="textarea textarea-bordered w-full"
                 rows="3"
                 required
+                phx-hook={@mentions_on && "MentionInput"}
+                id={@mentions_on && "#{@id}-edit-comment"}
               ><%= @editing_content %></textarea>
             <% end %>
             <div class="flex flex-wrap justify-end gap-2">
@@ -1215,8 +1292,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <% expanded = MapSet.member?(@ctx.expanded_comments, @comment.uuid) %>
             <% is_long = long_comment?(@comment.content) %>
             <div class="text-base-content break-words pk-comment-md">
+              <%!-- Mentions resolve for THIS reader before markdown runs:
+                   a link if they may open it, the author's words if it's
+                   gone, "no access" if it isn't theirs. --%>
               <.comment_markdown
-                content={@comment.content}
+                content={resolve_mentions(@comment.content, assigns)}
                 compact
                 class={if(is_long and not expanded, do: "line-clamp-4", else: "")}
               />
@@ -1633,7 +1713,12 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           class="textarea textarea-bordered w-full"
           rows="3"
           phx-debounce="150"
+          phx-hook={@mentions_on && "MentionInput"}
+          id={@mentions_on && "#{@id}-new-comment"}
         ><%= @ctx.new_comment %></textarea>
+        <p :if={@mentions_on} class="text-xs opacity-50">
+          {gettext("Type @ to mention someone, # to link a record.")}
+        </p>
       <% end %>
 
       <div class={[
