@@ -897,7 +897,7 @@ defmodule PhoenixKitComments do
     |> Map.new()
   rescue
     e ->
-      Logger.warning("Failed to load comment counts by type: #{inspect(e)}")
+      Logger.warning("Failed to load comment counts by type: " <> inspect(e))
       %{}
   end
 
@@ -920,7 +920,7 @@ defmodule PhoenixKitComments do
     |> Map.new(fn {type, keys} -> {type, Enum.sort(keys)} end)
   rescue
     e ->
-      Logger.warning("Failed to load metadata keys by type: #{inspect(e)}")
+      Logger.warning("Failed to load metadata keys by type: " <> inspect(e))
       %{}
   end
 

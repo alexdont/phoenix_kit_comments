@@ -127,7 +127,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          .pdf .doc .docx .txt .md
        ),
        max_entries: max_entries,
-       max_file_size: max_size_mb * 1024 * 1024
+       max_file_size: max_size_mb * @bytes_per_mb
      )}
   end
 
@@ -655,6 +655,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # component owns the actual write via the configured per-entry
   # `:on_save` action atom.
 
+  @bytes_per_mb 1024 * 1024
   @decoration_label_max 200
 
   @impl true
@@ -1275,7 +1276,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # counter). Threaded through the recursive children call below.
   attr(:ctx, :map, required: true)
 
-  def render_comment(assigns) do
+  defp render_comment(assigns) do
     decoration = find_decoration_for_comment(assigns.comment, assigns.comment_decorations)
 
     # Convenience: the pre-existing data-annotation-uuid attr on the

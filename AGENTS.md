@@ -41,7 +41,7 @@ lib/
 
 ### Key Modules
 
-- **`PhoenixKitComments`** (`lib/phoenix_kit_comments/phoenix_kit_comments.ex`) — Main module implementing `PhoenixKit.Module` behaviour AND serving as the context module for all comment operations (CRUD, threading, likes/dislikes, moderation, resource handler callbacks).
+- **`PhoenixKitComments`** (`lib/phoenix_kit_comments.ex`) — Main module implementing `PhoenixKit.Module` behaviour AND serving as the context module for all comment operations (CRUD, threading, likes/dislikes, moderation, resource handler callbacks).
 
 - **`PhoenixKitComments.Comment`** (`lib/phoenix_kit_comments/schemas/comment.ex`) — Ecto schema for polymorphic comments with self-referencing threading via `parent_uuid`. Fields: `resource_type`, `resource_uuid`, `user_uuid`, `content`, `status`, `depth`, `like_count`, `dislike_count`, `metadata`.
 
@@ -117,7 +117,7 @@ Four statuses as strings:
 |-----|------|---------|-------------|
 | `comments_enabled` | boolean | false | Module on/off |
 | `comments_moderation` | boolean | false | New comments start as "pending" |
-| `comments_max_depth` | integer | 10 | Maximum nesting level |
+| `comments_max_depth` | integer | 10 | Maximum nesting level. Depths are 0-based and `validate_depth/1` rejects at `>= max`, so 10 yields depths 0–9 |
 | `comments_max_length` | integer | 10000 | Maximum comment character length |
 | `comments_giphy_enabled` | boolean | false | Show the Giphy picker in the comment form |
 | `comments_giphy_api_key` | string | "" | Giphy API key (DB-stored) |
@@ -125,6 +125,7 @@ Four statuses as strings:
 | `comments_attachments_enabled` | boolean | false | Allow image/video/audio/file attachments and in-browser voice recording |
 | `comments_max_attachments` | integer | 4 | Per-comment attachment count cap (1–10) |
 | `comments_attachment_max_size_mb` | integer | 20 | Per-file size cap (MB), clamped against global `storage_max_upload_size_mb` |
+| `comments_rich_text` | boolean | true | Render comment bodies as markdown (Leaf composer + `comment_markdown/1`) |
 
 ## Critical Conventions
 
@@ -164,7 +165,7 @@ gh release create 0.1.0 \
 
 ### Full release checklist
 
-1. Update version in `mix.exs`, `lib/phoenix_kit_comments/phoenix_kit_comments.ex` (`version/0`), and the version test
+1. Update version in `mix.exs`, `lib/phoenix_kit_comments.ex` (`version/0`), and the version test
 2. Add changelog entry in `CHANGELOG.md`
 3. Run `mix precommit` — ensure zero warnings/errors before proceeding
 4. Commit all changes: `"Bump version to x.y.z"`

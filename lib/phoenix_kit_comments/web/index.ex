@@ -19,7 +19,6 @@ defmodule PhoenixKitComments.Web.Index do
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitComments
   alias PhoenixKitComments.Comment
 
   @impl true
@@ -454,7 +453,7 @@ defmodule PhoenixKitComments.Web.Index do
           "inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle",
           @class
         ]}
-        title={"#{@comment.resource_type}: #{@comment.resource_uuid}"}
+        title={"#{humanize_resource_type(@comment.resource_type)}: #{@comment.resource_uuid}"}
       >
         <.icon name="hero-tag" class="w-3.5 h-3.5 text-base-content/40 shrink-0" />
         <span class="truncate text-xs text-base-content/70 min-w-0">
@@ -487,7 +486,7 @@ defmodule PhoenixKitComments.Web.Index do
       style={"background-image: url('#{@info.thumb_url}')"}
     />
     <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
-      {@comment.resource_type}
+      {humanize_resource_type(@comment.resource_type)}
     </span>
     <span class="truncate text-sm min-w-0">{@info.title}</span>
     """
@@ -496,9 +495,12 @@ defmodule PhoenixKitComments.Web.Index do
   # "test_page" -> "Test page". Used for the no-handler fallback chip so an
   # unconfigured resource type reads as a label, not a raw key.
   defp humanize_resource_type(type) when is_binary(type) and type != "" do
+    # Per WORD. `String.capitalize/1` lowercases the whole string, so
+    # "api_key" became "Api key" and "GitHubRepo" became "Githubrepo".
     type
     |> String.replace(["_", "-"], " ")
-    |> String.capitalize()
+    |> String.split(" ", trim: true)
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp humanize_resource_type(_), do: gettext("Resource")
