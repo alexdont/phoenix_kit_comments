@@ -21,7 +21,24 @@ defmodule PhoenixKitComments.Web.Settings do
   alias PhoenixKit.Users.Auth.Scope
 
   @impl true
+  # Gated on mount, not just on save. Every write here checked, while the
+  # page itself rendered `@comments_giphy_api_key` into a form value — masked
+  # by `type="password"`, which is not a security control — for any admin
+  # without the comments permission.
   def mount(_params, _session, socket) do
+    case check_authorization(socket) do
+      :ok ->
+        do_mount(socket)
+
+      {:error, :unauthorized} ->
+        {:ok,
+         socket
+         |> put_flash(:error, gettext("You do not have access to comments settings."))
+         |> push_navigate(to: Routes.path("/admin"))}
+    end
+  end
+
+  defp do_mount(socket) do
     socket =
       socket
       |> assign(:page_title, "Comments Settings")

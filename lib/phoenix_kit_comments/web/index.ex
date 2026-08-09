@@ -23,7 +23,30 @@ defmodule PhoenixKitComments.Web.Index do
   alias PhoenixKitComments.Comment
 
   @impl true
+  # Reads are gated here, not only writes.
+  #
+  # Core's admin routes are pipelined through `:phoenix_kit_ensure_admin`
+  # only; the `permission: "comments"` on the tab controls sidebar
+  # VISIBILITY, not access. So every mutation called `check_authorization/1`
+  # and correctly answered "Not authorized", while `mount/3`,
+  # `handle_params/3` and `view_comment` handed an admin without the
+  # comments permission the whole platform's comments — bodies, commenter
+  # emails, and on the settings page the Giphy API key in a form value.
+  # That every write was gated is what shows the read side was meant to be.
   def mount(_params, _session, socket) do
+    case check_authorization(socket) do
+      :ok ->
+        do_mount(socket)
+
+      {:error, :unauthorized} ->
+        {:ok,
+         socket
+         |> put_flash(:error, gettext("You do not have access to comments."))
+         |> push_navigate(to: Routes.path("/admin"))}
+    end
+  end
+
+  defp do_mount(socket) do
     if PhoenixKitComments.enabled?() do
       socket =
         socket
@@ -92,12 +115,22 @@ defmodule PhoenixKitComments.Web.Index do
   # preview; this shows the whole comment in formatted prose).
   @impl true
   def handle_event("view_comment", %{"uuid" => uuid}, socket) do
-    {:noreply,
-     assign(
-       socket,
-       :viewing_comment,
-       PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
-     )}
+    # The only read event that skipped the check every write performs. Mount
+    # now gates the page, but this stays: it reads an ARBITRARY comment by
+    # uuid, so it is the one handler where "already on the page" is not the
+    # same as "may see this row".
+    case check_authorization(socket) do
+      :ok ->
+        {:noreply,
+         assign(
+           socket,
+           :viewing_comment,
+           PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
+         )}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+    end
   end
 
   @impl true
@@ -211,37 +244,22 @@ defmodule PhoenixKitComments.Web.Index do
     if uuids == [] do
       {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
-      case action do
-        "approve" ->
-          PhoenixKitComments.bulk_update_status(uuids, "published")
+      {status, label} =
+        case action do
+          "approve" -> {"published", gettext("approved")}
+          "hide" -> {"hidden", gettext("hidden")}
+          "delete" -> {"deleted", gettext("deleted")}
+        end
 
-          {:noreply,
-           socket
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments approved"))}
+      # `bulk_update_status/2` returns `{ok_count, error_count}` and all three
+      # branches used to throw it away and flash success unconditionally — so
+      # a bulk action where every row failed reported "Comments approved".
+      {ok_count, err_count} = PhoenixKitComments.bulk_update_status(uuids, status)
 
-        "hide" ->
-          PhoenixKitComments.bulk_update_status(uuids, "hidden")
+      socket = socket |> load_comments() |> reload_stats()
 
-          {:noreply,
-           socket
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments hidden"))}
-
-        "delete" ->
-          PhoenixKitComments.bulk_update_status(uuids, "deleted")
-
-          {:noreply,
-           socket
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments deleted"))}
-
-        _ ->
-          {:noreply, socket}
-      end
+      {:noreply,
+       put_flash(socket, bulk_flash_kind(err_count), bulk_message(ok_count, err_count, label))}
     end
   end
 
@@ -334,6 +352,34 @@ defmodule PhoenixKitComments.Web.Index do
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(val), do: val
+
+  defp bulk_flash_kind(0), do: :info
+  defp bulk_flash_kind(_), do: :error
+
+  defp bulk_message(ok_count, 0, label),
+    do:
+      ngettext("%{count} comment %{action}", "%{count} comments %{action}", ok_count,
+        count: ok_count,
+        action: label
+      )
+
+  defp bulk_message(0, err_count, label),
+    do:
+      ngettext(
+        "%{count} comment could not be %{action}",
+        "%{count} comments could not be %{action}",
+        err_count,
+        count: err_count,
+        action: label
+      )
+
+  defp bulk_message(ok_count, err_count, label),
+    do:
+      gettext("%{ok} %{action}, %{failed} failed",
+        ok: ok_count,
+        action: label,
+        failed: err_count
+      )
 
   defp check_authorization(socket) do
     scope = socket.assigns[:phoenix_kit_current_scope]
