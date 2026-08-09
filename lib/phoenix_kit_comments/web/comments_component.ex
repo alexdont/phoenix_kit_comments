@@ -154,6 +154,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # `comments_rich_text` setting (default true). The effective
       # `:leaf_editor?` below also requires Leaf to actually be loaded.
       |> assign_new(:rich_text, fn -> PhoenixKitComments.rich_text_enabled?() end)
+      # PUBLIC surfaces set this. A comment body goes through the same
+      # mention resolver as everything else, and with the site-wide
+      # redaction setting off (its sensible default) that resolver looks up
+      # the CURRENT title of records the reader cannot open. On a page
+      # anyone can read, a hand-typed `#[project_task:...]` therefore
+      # published an internal name — the typeahead never offers one, but
+      # nothing stops someone typing it, and nothing validates tokens on
+      # write.
+      |> assign_new(:withhold_mention_titles, fn -> false end)
       # The @/# typeahead, on the PLAIN textarea only: the rich editor owns
       # its own key handling, and a second listener fighting it for the
       # caret is how you get a composer that eats keystrokes.
@@ -1031,7 +1040,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     if Code.ensure_loaded?(PhoenixKit.Mentions) do
       PhoenixKit.Mentions.to_markdown(content,
         scope: assigns[:pk_scope],
-        user_uuid: assigns[:current_user] && assigns.current_user.uuid
+        user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+        withhold_titles: assigns[:withhold_mention_titles] == true
       )
     else
       content
