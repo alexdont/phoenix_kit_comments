@@ -62,6 +62,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   alias PhoenixKit.Users.Auth.User
 
   require Logger
+
+  @bytes_per_mb 1024 * 1024
   alias PhoenixKit.Users.Roles
 
   # Leaf is an optional dep. When present, the comment form swaps
@@ -174,9 +176,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # The @/# typeahead, on the PLAIN textarea only: the rich editor owns
       # its own key handling, and a second listener fighting it for the
       # caret is how you get a composer that eats keystrokes.
-      |> assign_new(:mentions_on, fn ->
-        Code.ensure_loaded?(PhoenixKit.Mentions) and PhoenixKit.Mentions.enabled?()
-      end)
+      |> assign_new(:mentions_on, fn -> mentions_available?() end)
       # Built ONCE per render, not per comment: resolving a mention needs a
       # scope (permissions, not just a uuid), and Scope.for_user/1 reads the
       # database — doing it inside the comment loop would be one query per
@@ -627,24 +627,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:noreply, put_flash(socket, :error, gettext("Comment not found"))}
 
       comment ->
-        if comment.resource_type != socket.assigns.resource_type or
-             comment.resource_uuid != socket.assigns.resource_uuid do
-          {:noreply, put_flash(socket, :error, gettext("Invalid comment for this resource"))}
-        else
-          # Permission FIRST. This used to forward the decoration and then
-          # let `do_save_edit/3` do the check, so a caller whose edit rights
-          # had gone still landed the label on the host record while their
-          # body edit was refused — half an edit, from a refused request.
-          if can_edit_comment?(socket.assigns[:current_user], comment) do
-            # If the edit form carried a "label" field (i.e. the comment has
-            # a matching decoration with an `on_save` action), forward the
-            # new label to the parent. Both updates fire in the same tick.
-            maybe_forward_decoration_update(socket, comment, params)
-            do_save_edit(socket, comment, content)
-          else
-            {:noreply, put_flash(socket, :error, gettext("You cannot edit this comment"))}
-          end
-        end
+        save_edit_for(socket, comment, content, params)
     end
   end
 
@@ -655,7 +638,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # component owns the actual write via the configured per-entry
   # `:on_save` action atom.
 
-  @bytes_per_mb 1024 * 1024
   @decoration_label_max 200
 
   @impl true
@@ -1078,6 +1060,39 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp audio_error_message("attach_failed"), do: gettext("Failed to attach the recording.")
   defp audio_error_message(_other), do: gettext("Recording failed. Please try again.")
 
+  defp save_edit_for(socket, comment, content, params) do
+    cond do
+      comment.resource_type != socket.assigns.resource_type or
+          comment.resource_uuid != socket.assigns.resource_uuid ->
+        {:noreply, put_flash(socket, :error, gettext("Invalid comment for this resource"))}
+
+      # Permission FIRST. This used to forward the decoration and then let
+      # `do_save_edit/3` do the check, so a caller whose edit rights had gone
+      # still landed the label on the host record while their body edit was
+      # refused — half an edit, from a refused request.
+      not can_edit_comment?(socket.assigns[:current_user], comment) ->
+        {:noreply, put_flash(socket, :error, gettext("You cannot edit this comment"))}
+
+      true ->
+        # If the edit form carried a "label" field (i.e. the comment has a
+        # matching decoration with an `on_save` action), forward the new
+        # label to the parent. Both updates fire in the same tick.
+        maybe_forward_decoration_update(socket, comment, params)
+        do_save_edit(socket, comment, content)
+    end
+  end
+
+  # Mentions ship in a core release newer than this module's declared floor,
+  # so the call has to be resolved at runtime — `apply/3` is the point, not
+  # an oversight, which is why the check is disabled just here.
+  defp mentions_available? do
+    Code.ensure_loaded?(PhoenixKit.Mentions) and
+      credo_safe_apply(PhoenixKit.Mentions, :enabled?, [])
+  end
+
+  # credo:disable-for-next-line Credo.Check.Refactor.Apply
+  defp credo_safe_apply(mod, fun, args), do: apply(mod, fun, args)
+
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid) do
@@ -1200,11 +1215,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     # both values are really there. Same class as the KeyError fixed in
     # ff6c378; that pass missed this one because nothing crashed.
     if Code.ensure_loaded?(PhoenixKit.Mentions) do
-      PhoenixKit.Mentions.to_markdown(content,
-        scope: assigns[:pk_scope],
-        user_uuid: assigns[:current_user] && assigns.current_user.uuid,
-        withhold_titles: assigns[:withhold_mention_titles] == true
-      )
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      apply(PhoenixKit.Mentions, :to_markdown, [
+        content,
+        [
+          scope: assigns[:pk_scope],
+          user_uuid: assigns[:current_user] && assigns.current_user.uuid,
+          withhold_titles: assigns[:withhold_mention_titles] == true
+        ]
+      ])
     else
       content
     end
@@ -1217,16 +1236,23 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # failure can never cost someone their comment.
   defp sync_mentions(comment, actor_uuid) do
     if Code.ensure_loaded?(PhoenixKit.Mentions) do
-      case PhoenixKit.Mentions.sync("comment", comment.uuid, comment.content,
-             field: "content",
-             actor_uuid: actor_uuid
-           ) do
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      case apply(PhoenixKit.Mentions, :sync, [
+             "comment",
+             comment.uuid,
+             comment.content,
+             [field: "content", actor_uuid: actor_uuid]
+           ]) do
         {:ok, new} ->
-          PhoenixKit.Mentions.notify(new,
-            source_type: comment.resource_type,
-            source_uuid: comment.resource_uuid,
-            preview: comment.content
-          )
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(PhoenixKit.Mentions, :notify, [
+            new,
+            [
+              source_type: comment.resource_type,
+              source_uuid: comment.resource_uuid,
+              preview: comment.content
+            ]
+          ])
 
         _ ->
           :ok
@@ -2357,7 +2383,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # module used to print next to every comment.
   defp display_name(user) do
     if function_exported?(User, :display_name, 1) do
-      User.display_name(user)
+      # `apply/3` on purpose: a direct call is resolved at compile time and
+      # warns against the older core this module still declares as its
+      # floor, which is exactly the version the guard exists for.
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      apply(User, :display_name, [user])
     else
       fallback_display_name(user)
     end

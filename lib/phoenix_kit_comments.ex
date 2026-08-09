@@ -261,10 +261,10 @@ defmodule PhoenixKitComments do
         # the toggle off the picker was hidden and a crafted `giphy_search`
         # event still spent the host's Giphy quota. The hidden control was
         # never the control.
-        if not giphy_enabled?() do
-          {:error, :giphy_disabled}
-        else
+        if giphy_enabled?() do
           do_search_giphy(trimmed, opts)
+        else
+          {:error, :giphy_disabled}
         end
     end
   end
@@ -1398,10 +1398,10 @@ defmodule PhoenixKitComments do
     # here, and `String.length/1` on it raised FunctionClauseError — killing
     # the LiveView and writing the user's draft into the crash report as a
     # side effect. Anything that is not a string is not a valid body.
-    if not is_binary(content) do
-      {:error, :invalid_content}
-    else
+    if is_binary(content) do
       check_content_length(content, max)
+    else
+      {:error, :invalid_content}
     end
   end
 
