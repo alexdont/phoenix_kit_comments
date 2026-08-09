@@ -417,12 +417,17 @@ defmodule PhoenixKitComments do
 
   defp do_create_comment(resource_type, resource_uuid, user_uuid, attrs) do
     {file_uuids, attrs} = Map.pop(attrs, :attachment_file_uuids, [])
+    # Popped BEFORE cast, like the file uuids: attribution decides what the
+    # public sees and whether somebody is speaking for an organisation, so
+    # it must arrive as a computed argument rather than as a castable field
+    # a client could set.
+    {attribution, attrs} = Map.pop(attrs, :attribution)
     file_uuids = List.wrap(file_uuids)
     attrs = prepare_create_attrs(resource_type, resource_uuid, user_uuid, attrs)
 
     with :ok <- run_cheap_validators(attrs, length(file_uuids)),
          :ok <- validate_file_uuid_format(file_uuids),
-         {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids) do
+         {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids, attribution) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
       broadcast_change(resource_type, resource_uuid, :created)
       {:ok, comment}
@@ -446,14 +451,20 @@ defmodule PhoenixKitComments do
     end
   end
 
-  defp insert_comment_with_attachments(attrs, []) do
-    %Comment{} |> Comment.changeset(attrs, has_media: false) |> repo().insert()
+  defp insert_comment_with_attachments(attrs, [], attribution) do
+    %Comment{}
+    |> Comment.changeset(attrs, has_media: false)
+    |> Comment.put_attribution(attribution)
+    |> repo().insert()
   end
 
-  defp insert_comment_with_attachments(attrs, file_uuids) do
+  defp insert_comment_with_attachments(attrs, file_uuids, attribution) do
     repo().transaction(fn ->
       with {:ok, comment} <-
-             %Comment{} |> Comment.changeset(attrs, has_media: true) |> repo().insert(),
+             %Comment{}
+             |> Comment.changeset(attrs, has_media: true)
+             |> Comment.put_attribution(attribution)
+             |> repo().insert(),
            :ok <- attach_files(comment.uuid, file_uuids) do
         repo().preload(comment, media: :file)
       else

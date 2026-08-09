@@ -59,6 +59,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
+  alias PhoenixKit.Users.Auth.User
   alias PhoenixKit.Users.Roles
 
   # Leaf is an optional dep. When present, the comment form swaps
@@ -163,6 +164,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       # nothing stops someone typing it, and nothing validates tokens on
       # write.
       |> assign_new(:withhold_mention_titles, fn -> false end)
+      # Set by hosts that can vouch for a project voice. A map of
+      # %{project_uuid, label, verify: (user_uuid -> boolean), default_on}.
+      # nil — the default — means the control never renders and nobody can
+      # claim to speak for anything.
+      |> assign_new(:project_attribution, fn -> nil end)
       # The @/# typeahead, on the PLAIN textarea only: the rich editor owns
       # its own key handling, and a second listener fighting it for the
       # caret is how you get a composer that eats keystrokes.
@@ -321,7 +327,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     base_attrs = %{
       content: comment_text,
       parent_uuid: socket.assigns.reply_to,
-      metadata: metadata
+      metadata: metadata,
+      attribution: resolve_attribution(socket, params)
     }
 
     entry_count = length(socket.assigns.uploads.attachment.entries)
@@ -1153,7 +1160,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           <.icon name="hero-user-circle" class="w-5 h-5 text-base-content/60 shrink-0" />
           <span class="font-semibold truncate min-w-0">
             <%= if @comment.user do %>
-              {@comment.user.email}
+              {author_name(@comment)}
             <% else %>
               {gettext("Unknown")}
             <% end %>
@@ -1742,6 +1749,26 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {String.length(@ctx.new_comment)} / {@ctx.max_length}
       </div>
 
+      <%!-- Speaking for the project, not about it. Rendered only when the
+            host supplied a verifier AND that verifier says this person
+            qualifies right now — no control, no hint, for everyone else.
+            The checked state is a suggestion; `resolve_attribution/2` asks
+            again at submit and quietly downgrades a stale claim. --%>
+      <label
+        :if={project_voice_offered?(@ctx)}
+        class="label cursor-pointer justify-start gap-2 py-1"
+      >
+        <input
+          type="checkbox"
+          name="post_as_project"
+          class="checkbox checkbox-sm"
+          checked={@ctx.project_attribution[:default_on] == true}
+        />
+        <span class="label-text text-sm">
+          {gettext("Post as %{project}", project: @ctx.project_attribution[:label])}
+        </span>
+      </label>
+
       <%= if @with_extras and @ctx.form_extras != [], do: render_slot(@ctx.form_extras) %>
 
       <%!-- Persistent: recorder hook + live file input. Both must
@@ -2068,6 +2095,65 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # :both. First present position wins.
   defp primary_composer_position(:bottom), do: :bottom
   defp primary_composer_position(_), do: :top
+
+  defp project_voice_offered?(ctx) do
+    case {ctx[:project_attribution], ctx[:current_user]} do
+      {%{} = attribution, %{} = user} -> eligible_for_project_voice?(attribution, user)
+      _ -> false
+    end
+  end
+
+  # What gets frozen onto the row. The checkbox is INTENT; this is the
+  # decision, made server-side at submit.
+  #
+  # Re-asking the host's `verify` at write is the point: the composer was
+  # rendered at some earlier moment, and membership can be revoked in
+  # between. Trusting the assign would mean a removed member could keep
+  # speaking for the project by leaving a tab open.
+  #
+  # A refused claim quietly becomes a personal comment rather than an
+  # error — the comment is still perfectly valid, and an error here would
+  # also make the control a membership oracle.
+  defp resolve_attribution(socket, params) do
+    user = socket.assigns.current_user
+    personal = %{mode: "personal", label: User.display_name(user)}
+
+    with true <- params["post_as_project"] in ["true", "on", true],
+         %{} = attribution <- socket.assigns[:project_attribution],
+         true <- eligible_for_project_voice?(attribution, user) do
+      %{
+        mode: "project",
+        label: attribution[:label],
+        project_uuid: attribution[:project_uuid]
+      }
+    else
+      _ -> personal
+    end
+  end
+
+  defp eligible_for_project_voice?(%{verify: verify} = attribution, user)
+       when is_function(verify, 1) do
+    is_binary(attribution[:label]) and attribution[:label] != "" and verify.(user.uuid) == true
+  end
+
+  # No verifier supplied means the host cannot vouch for anyone, so nobody
+  # speaks for the project. Fail closed.
+  defp eligible_for_project_voice?(_attribution, _user), do: false
+
+  # Who a comment is FROM, for the header.
+  #
+  # `author_display_name` is FROZEN on the row at write time. Re-deriving it
+  # would rewrite history: a person who leaves, is renamed, or later fills in
+  # a profile would have every comment they ever made silently re-signed —
+  # and someone who posted under a project's name would be un-masked by an
+  # unrelated membership change. Older rows have no frozen value, so they
+  # fall back to the live chain.
+  #
+  # Never `user.email`, which is what this used to print, on public boards
+  # included.
+  defp author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
+  defp author_name(%{user: %User{} = user}), do: User.display_name(user)
+  defp author_name(_), do: gettext("Unknown")
 
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
 

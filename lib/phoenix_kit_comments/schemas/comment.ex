@@ -69,6 +69,16 @@ defmodule PhoenixKitComments.Comment do
     field(:dislike_count, :integer, default: 0)
     field(:metadata, :map, default: %{})
 
+    # ── Attribution, frozen at write ────────────────────────────────
+    # Deliberately absent from `cast/3` below: these decide what the public
+    # sees and whether someone is speaking for an organisation, so a client
+    # that could set them could sign a comment as anyone. They are applied
+    # by `put_attribution/2` from values the SERVER computed.
+    field(:author_display_name, :string)
+    field(:attribution_mode, :string)
+    field(:attributed_project_uuid, Ecto.UUID)
+    field(:attributed_label, :string)
+
     belongs_to(:user, PhoenixKit.Users.Auth.User,
       foreign_key: :user_uuid,
       references: :uuid,
@@ -90,6 +100,36 @@ defmodule PhoenixKitComments.Comment do
 
     timestamps(type: :utc_datetime)
   end
+
+  @doc """
+  Freezes who this comment is from. Server-set only — never from `attrs`.
+
+  `:personal` pins the display name the reader will see, so a later rename,
+  a filled-in profile or a departure does not re-sign every comment the
+  person ever wrote.
+
+  `:project` additionally records that they were speaking for the project,
+  and pins the project's name as it read at the time. **`user_uuid` is left
+  exactly as it was**: the public sees the project, and internally the
+  author is still on the row for moderation and audit. A shared voice with
+  nobody accountable behind it is the failure mode of this feature.
+  """
+  @spec put_attribution(Ecto.Changeset.t(), map() | nil) :: Ecto.Changeset.t()
+  def put_attribution(changeset, %{mode: "project"} = attribution) do
+    changeset
+    |> put_change(:attribution_mode, "project")
+    |> put_change(:author_display_name, attribution[:label])
+    |> put_change(:attributed_project_uuid, attribution[:project_uuid])
+    |> put_change(:attributed_label, attribution[:label])
+  end
+
+  def put_attribution(changeset, %{mode: "personal"} = attribution) do
+    changeset
+    |> put_change(:attribution_mode, "personal")
+    |> put_change(:author_display_name, attribution[:label])
+  end
+
+  def put_attribution(changeset, _), do: changeset
 
   @doc """
   Changeset for creating or updating a comment.
