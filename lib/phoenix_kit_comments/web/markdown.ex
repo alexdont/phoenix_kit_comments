@@ -4,15 +4,13 @@ defmodule PhoenixKitComments.Web.Markdown do
 
   Comments are authored as markdown in the Leaf composer (which renders with
   MDEx); rendering with the same engine and `render` options on display keeps
-  the two consistent. Output passes through core's `HtmlSanitizer` for XSS
+  the two consistent. Output is sanitised by MDEx's allow-list for XSS
   protection. Used by both the public comments component and the admin
   moderation page so bold/italics/lists/etc. show formatted instead of raw.
   """
   use Phoenix.Component
 
   import Phoenix.HTML, only: [raw: 1]
-
-  alias PhoenixKit.Utils.HtmlSanitizer
 
   @doc """
   Renders a comment's markdown content to sanitized HTML inside a `pk-comment-md`
@@ -25,13 +23,34 @@ defmodule PhoenixKitComments.Web.Markdown do
   `PhoenixKitWeb.Components.Core.Markdown.markdown/1`, which is imported wherever
   `use PhoenixKitWeb` is in play.
   """
+  # `hardbreaks` matches what the Leaf composer shows while typing; `unsafe`
+  # is what makes the sanitiser load-bearing rather than decorative.
+  # MDEx's default allow-list permits `style` on `div` (it strips it from
+  # `p`), which lets a comment position an element over the page — an
+  # overlay on the moderation UI's own buttons, for instance. Comments have
+  # no reason to carry inline CSS, so it comes off. `javascript:` inside
+  # `url()` is not executed by current browsers; the clickjacking surface is
+  # the real reason.
+  @render_opts [
+    render: [hardbreaks: true, unsafe: true],
+    sanitize:
+      Keyword.put(
+        MDEx.Document.default_sanitize_options(),
+        :rm_tag_attributes,
+        %{"div" => ["style"]}
+      )
+  ]
+
   attr(:content, :string, required: true, doc: "The markdown content to render")
   attr(:class, :string, default: "", doc: "Additional CSS classes")
   attr(:compact, :boolean, default: false, doc: "Use smaller (text-sm) text for previews")
-  attr(:sanitize, :boolean, default: true, doc: "Enable HTML sanitization")
+  # No `sanitize` attr, deliberately. Comment bodies are written by whoever
+  # can post, so there is no caller for whom skipping sanitisation would be
+  # correct — and an opt-out on this component is one `sanitize={false}` away
+  # from stored XSS on every reader of a thread.
 
   def comment_markdown(assigns) do
-    assigns = assign(assigns, :html_content, render_markdown(assigns.content, assigns.sanitize))
+    assigns = assign(assigns, :html_content, render_markdown(assigns.content))
 
     ~H"""
     <div class={["pk-comment-md max-w-none", @compact && "text-sm", @class]}>
@@ -68,20 +87,35 @@ defmodule PhoenixKitComments.Web.Markdown do
   end
 
   @doc """
-  Renders markdown to sanitized HTML (or escaped text on a parse error). Blank
-  input returns an empty string. Uses the same MDEx options as the Leaf composer
-  (`hardbreaks`, `unsafe`) so display matches what was typed.
+  Renders markdown to sanitised HTML (or escaped text on a parse error). Blank
+  input returns an empty string.
+
+  ## Why `sanitize:` and not a regex pass afterwards
+
+  `unsafe: true` is what lets a comment contain real markdown-adjacent HTML,
+  and it disables MDEx's own escaping — so everything downstream of it is the
+  security boundary. That used to be a handful of regexes over the rendered
+  string, which is a blocklist, and a blocklist over HTML loses:
+
+    * `&lt;script&gt;alert(1)` with NO closing tag survived — the pattern required
+      a matching `&lt;/script&gt;`.
+    * `&lt;a href=javascript:alert(1)&gt;` survived — the pattern required the value
+      to be quoted.
+
+  Both were verified against the real renderer, and both execute for every
+  reader of a thread and again in the admin moderation list, which renders the
+  same component. MDEx's `:sanitize` is ammonia, an allow-list: unknown tags
+  and every attribute outside the allowed set are dropped rather than matched
+  against, and it rewrites `rel` on links for free. There is no opt-out.
   """
-  def render_markdown(content, sanitize \\ true)
+  def render_markdown(content) when content in [nil, ""], do: ""
 
-  def render_markdown(content, _sanitize) when content in [nil, ""], do: ""
-
-  def render_markdown(content, sanitize) when is_binary(content) do
-    case MDEx.to_html(content, render: [hardbreaks: true, unsafe: true]) do
-      {:ok, html} -> if sanitize, do: HtmlSanitizer.sanitize(html), else: html
+  def render_markdown(content) when is_binary(content) do
+    case MDEx.to_html(content, @render_opts) do
+      {:ok, html} -> html
       {:error, _reason} -> content |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
     end
   end
 
-  def render_markdown(_other, _sanitize), do: ""
+  def render_markdown(_other), do: ""
 end
