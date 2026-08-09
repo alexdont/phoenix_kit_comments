@@ -41,7 +41,7 @@ defmodule PhoenixKitComments.Web.Settings do
   defp do_mount(socket) do
     socket =
       socket
-      |> assign(:page_title, "Comments Settings")
+      |> assign(:page_title, gettext("Comments Settings"))
       |> assign(:project_title, "")
       |> assign(:saving, false)
       |> assign(:editing_resource_type, nil)
@@ -321,21 +321,21 @@ defmodule PhoenixKitComments.Web.Settings do
   defp build_config(path_template, title_template),
     do: %{"path" => path_template, "title" => title_template}
 
-  defp validate_resource_path("", _), do: {:error, "Resource type is required"}
-  defp validate_resource_path(_, ""), do: {:error, "Path template is required"}
+  defp validate_resource_path("", _), do: {:error, gettext("Resource type is required")}
+  defp validate_resource_path(_, ""), do: {:error, gettext("Path template is required")}
 
   defp validate_resource_path(_resource_type, path_template) do
     cond do
       not (String.starts_with?(path_template, "/") or
                String.starts_with?(path_template, ":prefix")) ->
-        {:error, "Path template must start with / or :prefix"}
+        {:error, gettext("Path template must start with / or :prefix")}
 
       String.contains?(path_template, "://") ->
-        {:error, "Path template must be a relative path"}
+        {:error, gettext("Path template must be a relative path")}
 
       not (String.contains?(path_template, ":uuid") or
                String.contains?(path_template, ":metadata.")) ->
-        {:error, "Path template must contain :uuid or :metadata.KEY placeholders"}
+        {:error, gettext("Path template must contain :uuid or :metadata.KEY placeholders")}
 
       true ->
         :ok

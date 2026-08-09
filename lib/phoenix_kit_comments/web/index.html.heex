@@ -187,9 +187,14 @@
     data-bulk-show="has-selection"
     style="display: none;"
   >
+    <%!-- The catalog held this as a PLURAL entry left over from an `ngettext`
+         call, so the singular lookup missed it and every locale fell back to
+         English. The count is substituted CLIENT-side by the bulk hook, so no
+         locale's plural rules can apply anyway — the wording has to read
+         correctly for any number. --%>
     <span
       class="text-sm text-base-content/70"
-      data-bulk-text-template={gettext("%{count} selected", count: "%{count}")}
+      data-bulk-text-template={gettext("Selected: %{count}", count: "%{count}")}
     ></span>
     <button data-bulk-action="bulk_approve" phx-disable-with={gettext("Approving…")} class="btn btn-success btn-xs">
       {gettext("Approve")}

@@ -125,7 +125,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
          video/*
          audio/*
          .pdf .doc .docx .txt .md
-         .zip .rar .7z
        ),
        max_entries: max_entries,
        max_file_size: max_size_mb * 1024 * 1024
@@ -395,11 +394,21 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:noreply, assign(socket, :recording_audio?, false)}
   end
 
-  def handle_event("audio_recording_error", %{"message" => message}, socket) do
+  # Mapped from a fixed set of reason codes. This used to take the client's
+  # own string and put it straight into the flash — untranslated in every
+  # locale, and an open invitation to paint arbitrary text in the app's own
+  # error chrome ("Your session expired, sign in at …"). A non-binary value
+  # also reached `put_flash/3` and raised.
+  def handle_event("audio_recording_error", %{"reason" => reason}, socket)
+      when is_binary(reason) do
     {:noreply,
      socket
      |> assign(:recording_audio?, false)
-     |> put_flash(:error, message)}
+     |> put_flash(:error, audio_error_message(reason))}
+  end
+
+  def handle_event("audio_recording_error", _params, socket) do
+    {:noreply, assign(socket, :recording_audio?, false)}
   end
 
   @impl true
@@ -1044,13 +1053,53 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   defp giphy_error_message(_other), do: gettext("Giphy search failed. Please try again.")
 
+  # A browser-supplied filename reaches storage and, from there, download
+  # headers. Path separators and control characters come out; the rest is
+  # left recognisable to whoever uploaded it.
+  defp safe_filename(name) when is_binary(name) do
+    name
+    |> Path.basename()
+    |> String.replace(~r/[\x00-\x1f\/\\]/, "")
+    |> String.slice(0, 200)
+    |> case do
+      "" -> "attachment"
+      cleaned -> cleaned
+    end
+  end
+
+  defp safe_filename(_name), do: "attachment"
+
+  defp audio_error_message("unsupported"),
+    do: gettext("Microphone access is not supported by this browser.")
+
+  defp audio_error_message("denied"), do: gettext("Microphone permission denied.")
+  defp audio_error_message("start_failed"), do: gettext("Could not start recording.")
+  defp audio_error_message("attach_failed"), do: gettext("Failed to attach the recording.")
+  defp audio_error_message(_other), do: gettext("Recording failed. Please try again.")
+
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid) do
+    # `client_*` is exactly that: what the browser SAID. Core's storage does
+    # `Keyword.fetch!` on both and derives the stored mime type and the
+    # render branch from `content_type` alone — nothing in the chain looks
+    # at the bytes. So a file declaring `image/svg+xml` renders through the
+    # `<img>` branch, and a declared size becomes the recorded size.
+    #
+    # The size is now measured, and the extension is re-derived from the
+    # declared type rather than trusted from the name. Sniffing the content
+    # itself belongs in core's storage, next to the other `fetch!`s — noted
+    # in the sweep rather than reached around from here.
+    stat_size =
+      case File.stat(meta.path) do
+        {:ok, %{size: size}} -> size
+        _ -> entry.client_size
+      end
+
     opts = [
-      filename: entry.client_name,
+      filename: safe_filename(entry.client_name),
       content_type: entry.client_type,
-      size_bytes: entry.client_size,
+      size_bytes: stat_size,
       user_uuid: user_uuid
     ]
 
