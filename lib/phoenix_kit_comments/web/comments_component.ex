@@ -58,6 +58,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   alias PhoenixKit.Modules.Storage
   alias PhoenixKit.Modules.Storage.URLSigner
+  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Users.Roles
 
   # Leaf is an optional dep. When present, the comment form swaps
@@ -1071,7 +1072,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp viewer_scope(nil), do: nil
 
   defp viewer_scope(user) do
-    PhoenixKit.Users.Auth.Scope.for_user(user)
+    Scope.for_user(user)
   rescue
     _ -> nil
   catch
@@ -1269,8 +1270,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 class="textarea textarea-bordered w-full"
                 rows="3"
                 required
-                phx-hook={@mentions_on && "MentionInput"}
-                id={@mentions_on && "#{@id}-edit-comment"}
+                phx-hook={@ctx.mentions_on && "MentionInput"}
+                id={@ctx.mentions_on && "#{@ctx.id}-edit-comment"}
               ><%= @editing_content %></textarea>
             <% end %>
             <div class="flex flex-wrap justify-end gap-2">
@@ -1713,10 +1714,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           class="textarea textarea-bordered w-full"
           rows="3"
           phx-debounce="150"
-          phx-hook={@mentions_on && "MentionInput"}
-          id={@mentions_on && "#{@id}-new-comment"}
+          phx-hook={@ctx.mentions_on && "MentionInput"}
+          id={@ctx.mentions_on && "#{@ctx.id}-new-comment"}
         ><%= @ctx.new_comment %></textarea>
-        <p :if={@mentions_on} class="text-xs opacity-50">
+        <p :if={@ctx.mentions_on} class="text-xs opacity-50">
           {gettext("Type @ to mention someone, # to link a record.")}
         </p>
       <% end %>
