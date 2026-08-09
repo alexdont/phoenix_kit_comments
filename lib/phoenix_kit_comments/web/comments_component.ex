@@ -290,6 +290,22 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     {:ok, socket}
   end
 
+  # `@enabled` used to wrap the TEMPLATE only. The component still rendered
+  # its outer div, so its cid stayed live and addressable: a page already
+  # open when an admin switched comments off — or a replayed push — could
+  # still create, delete and react. The markup is not the control.
+  #
+  # Reads are left alone: hiding a thread should not make the rows
+  # unreadable to code that already has them.
+  @write_events ~w(add_comment save_edit delete_comment toggle_like toggle_dislike
+                   save_decoration begin_decoration_edit)
+
+  @impl true
+  def handle_event(event, _params, %{assigns: %{enabled: false}} = socket)
+      when event in @write_events do
+    {:noreply, put_flash(socket, :error, gettext("Comments are turned off here."))}
+  end
+
   @impl true
   def handle_event("add_comment", _params, %{assigns: %{can_post?: false}} = socket) do
     {:noreply, put_flash(socket, :error, gettext("Sign in to post a comment"))}
@@ -581,13 +597,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
              comment.resource_uuid != socket.assigns.resource_uuid do
           {:noreply, put_flash(socket, :error, gettext("Invalid comment for this resource"))}
         else
-          # If the edit form carried a "label" field (i.e. the
-          # comment has a matching decoration with an `on_save`
-          # action), forward the new label to the parent. Comment-
-          # content save below is unconditional. Both updates fire
-          # in the same tick.
-          maybe_forward_decoration_update(socket, comment, params)
-          do_save_edit(socket, comment, content)
+          # Permission FIRST. This used to forward the decoration and then
+          # let `do_save_edit/3` do the check, so a caller whose edit rights
+          # had gone still landed the label on the host record while their
+          # body edit was refused — half an edit, from a refused request.
+          if can_edit_comment?(socket.assigns[:current_user], comment) do
+            # If the edit form carried a "label" field (i.e. the comment has
+            # a matching decoration with an `on_save` action), forward the
+            # new label to the parent. Both updates fire in the same tick.
+            maybe_forward_decoration_update(socket, comment, params)
+            do_save_edit(socket, comment, content)
+          else
+            {:noreply, put_flash(socket, :error, gettext("You cannot edit this comment"))}
+          end
         end
     end
   end
@@ -599,9 +621,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # component owns the actual write via the configured per-entry
   # `:on_save` action atom.
 
+  @decoration_label_max 200
+
   @impl true
   def handle_event("begin_decoration_edit", %{"uuid" => comment_uuid}, socket) do
-    case find_decoration_for_comment_uuid(comment_uuid, socket) do
+    case decoration_if_permitted(comment_uuid, socket) do
       %{label: label, on_save: on_save, metadata_key: metadata_key} when not is_nil(on_save) ->
         {:noreply,
          socket
@@ -622,8 +646,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   end
 
   @impl true
-  def handle_event("save_decoration", %{"uuid" => comment_uuid, "label" => label}, socket) do
-    case find_decoration_for_comment_uuid(comment_uuid, socket) do
+  def handle_event("save_decoration", %{"uuid" => comment_uuid, "label" => label}, socket)
+      when is_binary(label) do
+    case decoration_if_permitted(comment_uuid, socket) do
       %{on_save: on_save, metadata_key: metadata_key, metadata_value: metadata_value}
       when not is_nil(on_save) ->
         if socket.assigns.parent_module && socket.assigns.parent_id do
@@ -632,7 +657,9 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             action: on_save,
             metadata_key: metadata_key,
             metadata_value: metadata_value,
-            label: String.trim(label)
+            # Capped server-side. `maxlength` on the input is a courtesy to
+            # the person typing, not a limit — the event can carry anything.
+            label: label |> String.trim() |> String.slice(0, @decoration_label_max)
           )
         end
 
@@ -645,6 +672,10 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:editing_decoration_uuid, nil)
      |> assign(:editing_decoration_value, "")}
   end
+
+  # A non-binary `label` (`label[a]=b`) used to reach String.trim/1 and kill
+  # the LiveView. Must sit AFTER the real clause, not before it.
+  def handle_event("save_decoration", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("delete_comment", %{"id" => comment_uuid}, socket) do
@@ -1566,6 +1597,26 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   defp comment_media(%{media: media}) when is_list(media), do: media
   defp comment_media(_), do: []
 
+  # A decoration write forwards to the HOST component (`on_save`), which then
+  # renames one of its own records — so this is a write on somebody else's
+  # data with nothing but the pencil icon in front of it. Neither handler
+  # checked anything at all: a logged-out visitor could push `save_decoration`
+  # at the component and rename any annotation on the page, and the
+  # `send_update` the host receives is byte-identical to a legitimate one.
+  #
+  # Gated on the same rule as editing the comment itself, which is the
+  # closest existing answer to "may this person change what this comment
+  # says".
+  defp decoration_if_permitted(comment_uuid, socket) do
+    with %{} = decoration <- find_decoration_for_comment_uuid(comment_uuid, socket),
+         %{} = comment <- find_comment_in_tree(socket.assigns.comments, comment_uuid),
+         true <- can_edit_comment?(socket.assigns[:current_user], comment) do
+      decoration
+    else
+      _ -> nil
+    end
+  end
+
   defp can_edit_comment?(nil, _comment), do: false
 
   defp can_edit_comment?(user, comment) do
@@ -2193,8 +2244,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       user |> Map.get(:email) |> to_string() |> String.split("@") |> List.first()
     ]
     |> Enum.find_value("User", fn
-      value when is_binary(value) -> if String.trim(value) == "", do: nil, else: String.trim(value)
-      _ -> nil
+      value when is_binary(value) ->
+        if String.trim(value) == "", do: nil, else: String.trim(value)
+
+      _ ->
+        nil
     end)
   end
 
