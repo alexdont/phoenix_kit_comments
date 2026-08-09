@@ -141,7 +141,12 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("approve", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.approve_comment(comment, actor_opts(socket))
+      # Restoring publishes only where publishing is the default. With
+      # moderation ON, a restored comment goes back to the queue rather than
+      # straight onto the page — `approve_comment/2` unconditionally
+      # published, so restoring something that had never been approved
+      # published it as a side effect of undoing a delete.
+      PhoenixKitComments.restore_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -494,6 +499,20 @@ defmodule PhoenixKitComments.Web.Index do
 
   # "test_page" -> "Test page". Used for the no-handler fallback chip so an
   # unconfigured resource type reads as a label, not a raw key.
+  # Enough for one clamped line, cut on a boundary so markdown syntax is not
+  # sliced mid-token.
+  @preview_chars 200
+
+  defp preview_source(content) when is_binary(content) do
+    if String.length(content) > @preview_chars do
+      String.slice(content, 0, @preview_chars) <> "…"
+    else
+      content
+    end
+  end
+
+  defp preview_source(content), do: content
+
   defp humanize_resource_type(type) when is_binary(type) and type != "" do
     # Per WORD. `String.capitalize/1` lowercases the whole string, so
     # "api_key" became "Api key" and "GitHubRepo" became "Githubrepo".
@@ -567,9 +586,13 @@ defmodule PhoenixKitComments.Web.Index do
           <.icon name={media_icon(@comment)} class="w-4 h-4 shrink-0" />
           {media_placeholder(@comment)}
         </span>
+        <%!-- Truncated at the SOURCE. This parsed and sanitised every
+             comment body in full, per row, only to clamp the result to one
+             line with CSS — the whole render cost for a single line of
+             output. --%>
         <.comment_markdown
           :if={not blank_content?(@comment.content)}
-          content={@comment.content}
+          content={preview_source(@comment.content)}
           compact
           class="text-sm line-clamp-1"
         />

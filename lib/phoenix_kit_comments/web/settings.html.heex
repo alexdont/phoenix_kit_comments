@@ -367,16 +367,23 @@
           {gettext(
             "Configure URL patterns for resource types so comments link to their source in the admin page."
           )}
-          {gettext("Use")} <code class="kbd kbd-sm break-all">:uuid</code>
-          {gettext("for resource ID,")}
-          <code class="kbd kbd-sm break-all">:metadata.KEY</code>
-          {gettext("for values from comment metadata, and")}
-          <code class="kbd kbd-sm break-all">:prefix</code>
-          {gettext("to include the site URL prefix.")}
+          <%!-- One sentence, one msgid. This was five fragments assembled
+               around <code> tokens — "Use" / "for resource ID," / "or" —
+               which freezes word order to English and hands a translator
+               "for resource ID," with no context. The placeholders carry
+               the tokens instead, so a locale can put them anywhere. --%>
+          {gettext(
+            "Use %{uuid} for the resource ID, %{metadata} for values from comment metadata, and %{prefix} to include the site URL prefix.",
+            uuid: ":uuid",
+            metadata: ":metadata.KEY",
+            prefix: ":prefix"
+          )}
         </p>
         <p class="text-xs text-base-content/40 mb-4 break-words">
-          {gettext("Example:")} <code class="break-all">/products/:uuid</code>
-          {gettext("or")} <code class="break-all">:prefix/admin/shop/:uuid</code>
+          {gettext("Example: %{simple} or %{prefixed}",
+            simple: "/products/:uuid",
+            prefixed: ":prefix/admin/shop/:uuid"
+          )}
         </p>
 
         <%!-- Existing patterns --%>

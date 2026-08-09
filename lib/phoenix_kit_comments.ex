@@ -774,6 +774,24 @@ defmodule PhoenixKitComments do
     |> Activity.log_comment("comments.comment_approved", opts)
   end
 
+  @doc """
+  Restores a soft-deleted comment.
+
+  Publishes only when the site does not moderate; otherwise it goes back to
+  `pending`, because "undo a delete" should not also mean "approve".
+  """
+  @spec restore_comment(Comment.t(), keyword()) :: {:ok, Comment.t()} | {:error, term()}
+  def restore_comment(%Comment{} = comment, opts \\ []) do
+    status =
+      if Settings.get_boolean_setting("comments_moderation", false),
+        do: "pending",
+        else: "published"
+
+    comment
+    |> update_comment(%{status: status}, Keyword.put(opts, :log, false))
+    |> Activity.log_comment("comments.comment_restored", opts)
+  end
+
   @doc "Sets a comment's status to hidden."
   def hide_comment(%Comment{} = comment, opts \\ []) do
     comment
