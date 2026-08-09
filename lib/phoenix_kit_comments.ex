@@ -56,7 +56,7 @@ defmodule PhoenixKitComments do
   ### Moderation
   - `approve_comment/1` - Set status to published
   - `hide_comment/1` - Set status to hidden
-  - `bulk_update_status/2` - Bulk status changes
+  - `bulk_update_status/3` - Bulk status changes
   - `list_all_comments/1` - Cross-resource listing with filters
   - `comment_stats/0` - Aggregate statistics
 
@@ -75,6 +75,7 @@ defmodule PhoenixKitComments do
   alias PhoenixKit.ResourceLinks
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
+  alias PhoenixKitComments.Activity
   alias PhoenixKitComments.Comment
   alias PhoenixKitComments.CommentDislike
   alias PhoenixKitComments.CommentLike
@@ -439,7 +440,7 @@ defmodule PhoenixKitComments do
          {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids, attribution) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
       broadcast_change(resource_type, resource_uuid, :created)
-      {:ok, comment}
+      Activity.log_comment({:ok, comment}, "comments.comment_created", actor_uuid: user_uuid)
     end
   end
 
@@ -545,7 +546,7 @@ defmodule PhoenixKitComments do
   - `comment` - Comment to update
   - `attrs` - Attributes to update (content, status)
   """
-  def update_comment(%Comment{} = comment, attrs) do
+  def update_comment(%Comment{} = comment, attrs, opts \\ []) do
     # Preload :media so the changeset can infer "has media" when content
     # is being changed. Status-only updates skip the content-or-media
     # check entirely (see `Comment.changeset/3`), so this is a no-op on
@@ -556,6 +557,7 @@ defmodule PhoenixKitComments do
     |> ensure_media_loaded()
     |> Comment.changeset(attrs)
     |> repo().update()
+    |> Activity.log_comment("comments.comment_updated", opts)
   end
 
   defp ensure_media_loaded(%Comment{media: %Ecto.Association.NotLoaded{}} = comment) do
@@ -569,8 +571,10 @@ defmodule PhoenixKitComments do
 
   Invokes resource handler callback if configured.
   """
-  def delete_comment(%Comment{} = comment) do
-    case update_comment(comment, %{status: "deleted"}) do
+  def delete_comment(%Comment{} = comment, opts \\ []) do
+    # `update_comment/3` logs its own generic edit; the delete is the
+    # meaningful line, so the inner call is left unlogged.
+    case update_comment(comment, %{status: "deleted"}, log: false) do
       {:ok, deleted} ->
         notify_resource_handler(
           :on_comment_deleted,
@@ -581,7 +585,7 @@ defmodule PhoenixKitComments do
 
         broadcast_change(comment.resource_type, comment.resource_uuid, :deleted)
 
-        {:ok, deleted}
+        Activity.log_comment({:ok, deleted}, "comments.comment_deleted", opts)
 
       error ->
         error
@@ -749,13 +753,17 @@ defmodule PhoenixKitComments do
   # ============================================================================
 
   @doc "Sets a comment's status to published."
-  def approve_comment(%Comment{} = comment) do
-    update_comment(comment, %{status: "published"})
+  def approve_comment(%Comment{} = comment, opts \\ []) do
+    comment
+    |> update_comment(%{status: "published"}, opts)
+    |> Activity.log_comment("comments.comment_approved", opts)
   end
 
   @doc "Sets a comment's status to hidden."
-  def hide_comment(%Comment{} = comment) do
-    update_comment(comment, %{status: "hidden"})
+  def hide_comment(%Comment{} = comment, opts \\ []) do
+    comment
+    |> update_comment(%{status: "hidden"}, opts)
+    |> Activity.log_comment("comments.comment_hidden", opts)
   end
 
   @doc """
@@ -765,7 +773,9 @@ defmodule PhoenixKitComments do
   `"deleted"` case) so resource-handler callbacks fire per row. Returns
   `{ok_count, error_count}`.
   """
-  def bulk_update_status(comment_uuids, status)
+  def bulk_update_status(comment_uuids, status, opts \\ [])
+
+  def bulk_update_status(comment_uuids, status, opts)
       when is_list(comment_uuids) and status in ["published", "hidden", "deleted", "pending"] do
     # Filtered before the query: these arrive from the client, and a single
     # non-uuid element raises Ecto.Query.CastError for the whole batch.
@@ -778,8 +788,8 @@ defmodule PhoenixKitComments do
     Enum.reduce(comments, {0, 0}, fn comment, {ok, err} ->
       result =
         case status do
-          "deleted" -> delete_comment(comment)
-          _ -> update_comment(comment, %{status: status})
+          "deleted" -> delete_comment(comment, opts)
+          _ -> update_comment(comment, %{status: status}, opts)
         end
 
       case result do

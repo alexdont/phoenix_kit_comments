@@ -142,7 +142,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("approve", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.approve_comment(comment)
+      PhoenixKitComments.approve_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -159,7 +159,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("hide", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.hide_comment(comment)
+      PhoenixKitComments.hide_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -176,7 +176,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("delete", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.delete_comment(comment)
+      PhoenixKitComments.delete_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -194,7 +194,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("restore", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.approve_comment(comment)
+      PhoenixKitComments.approve_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -254,7 +254,8 @@ defmodule PhoenixKitComments.Web.Index do
       # `bulk_update_status/2` returns `{ok_count, error_count}` and all three
       # branches used to throw it away and flash success unconditionally — so
       # a bulk action where every row failed reported "Comments approved".
-      {ok_count, err_count} = PhoenixKitComments.bulk_update_status(uuids, status)
+      {ok_count, err_count} =
+        PhoenixKitComments.bulk_update_status(uuids, status, actor_opts(socket))
 
       socket = socket |> load_comments() |> reload_stats()
 
@@ -380,6 +381,15 @@ defmodule PhoenixKitComments.Web.Index do
         action: label,
         failed: err_count
       )
+
+  # The acting admin, for the audit trail. Moderation is exactly the kind of
+  # action whose value is knowing who took it.
+  defp actor_opts(socket) do
+    case socket.assigns[:phoenix_kit_current_scope] do
+      %{user: %{uuid: uuid}} -> [actor_uuid: uuid]
+      _ -> []
+    end
+  end
 
   defp check_authorization(socket) do
     scope = socket.assigns[:phoenix_kit_current_scope]
