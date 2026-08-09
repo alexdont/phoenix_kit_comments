@@ -74,6 +74,14 @@ defmodule PhoenixKitComments.MixProject do
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
+      # ⚠️ Comment attribution (`author_display_name`, `attribution_mode`,
+      # `attributed_project_uuid`, `attributed_label` on
+      # `phoenix_kit_comments`) needs core migration V166, which this floor
+      # still predates — a host at the floor gets a missing-column error
+      # from `get_comment_tree/2`. Deliberately not raised further because
+      # the core release carrying V166 is unpublished; bump it as part of
+      # releasing that. `display_name/1` is already guarded at the call site
+      # for the same reason.
       pk_dep(:phoenix_kit, "~> 1.7.214"),
 
       # LiveView is needed for the admin pages.

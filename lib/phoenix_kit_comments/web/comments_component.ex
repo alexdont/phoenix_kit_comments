@@ -1044,6 +1044,18 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # Rewrites @ and # tokens as markdown for the person reading. A no-op
   # when core is too old to have mentions, or the text has none.
   defp resolve_mentions(content, assigns) do
+    # Called from `render_comment/1`, a FUNCTION component — it sees only its
+    # declared attrs, never the LiveComponent's assigns. Passing that
+    # component's own `assigns` here read `pk_scope` and
+    # `withhold_mention_titles` as nil on every render, and because these are
+    # bracket lookups it failed silently instead of raising: the withhold
+    # feature was a no-op, and a nil scope made `Mentions.visible/3` fail
+    # closed, so every mention rendered locked WITH its title still printed —
+    # the exact leak withholding exists to prevent.
+    #
+    # `@ctx` is the parent's full assigns, forwarded at both call sites, so
+    # both values are really there. Same class as the KeyError fixed in
+    # ff6c378; that pass missed this one because nothing crashed.
     if Code.ensure_loaded?(PhoenixKit.Mentions) do
       PhoenixKit.Mentions.to_markdown(content,
         scope: assigns[:pk_scope],
@@ -1314,7 +1326,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                    a link if they may open it, the author's words if it's
                    gone, "no access" if it isn't theirs. --%>
               <.comment_markdown
-                content={resolve_mentions(@comment.content, assigns)}
+                content={resolve_mentions(@comment.content, @ctx)}
                 compact
                 class={if(is_long and not expanded, do: "line-clamp-4", else: "")}
               />
@@ -2116,7 +2128,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # also make the control a membership oracle.
   defp resolve_attribution(socket, params) do
     user = socket.assigns.current_user
-    personal = %{mode: "personal", label: User.display_name(user)}
+    personal = %{mode: "personal", label: display_name(user)}
 
     with true <- params["post_as_project"] in ["true", "on", true],
          %{} = attribution <- socket.assigns[:project_attribution],
@@ -2152,8 +2164,39 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   # Never `user.email`, which is what this used to print, on public boards
   # included.
   defp author_name(%{author_display_name: name}) when is_binary(name) and name != "", do: name
-  defp author_name(%{user: %User{} = user}), do: User.display_name(user)
+  defp author_name(%{user: %User{} = user}), do: display_name(user)
   defp author_name(_), do: gettext("Unknown")
+
+  # `User.display_name/1` landed in a core release NEWER than this module's
+  # declared floor (`mix.exs` pins `~> 1.7.189`). Calling it unguarded meant a
+  # host resolving core from Hex at that floor got UndefinedFunctionError on
+  # the main comment-render path. Pinning the newer core is not an option
+  # while it is unreleased, so the chain is reproduced here for older cores.
+  #
+  # The chain must stay in step with core's: name, then username, then the
+  # LOCAL PART of the email — never the address itself, which is what this
+  # module used to print next to every comment.
+  defp display_name(user) do
+    if function_exported?(User, :display_name, 1) do
+      User.display_name(user)
+    else
+      fallback_display_name(user)
+    end
+  end
+
+  defp fallback_display_name(user) do
+    [
+      [Map.get(user, :first_name), Map.get(user, :last_name)]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.join(" "),
+      Map.get(user, :username),
+      user |> Map.get(:email) |> to_string() |> String.split("@") |> List.first()
+    ]
+    |> Enum.find_value("User", fn
+      value when is_binary(value) -> if String.trim(value) == "", do: nil, else: String.trim(value)
+      _ -> nil
+    end)
+  end
 
   defp leaf_available?, do: Code.ensure_loaded?(Leaf)
 
