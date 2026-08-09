@@ -256,31 +256,46 @@ defmodule PhoenixKitComments do
         {:ok, []}
 
       trimmed ->
-        case get_giphy_api_key() do
-          "" ->
-            {:error, :missing_api_key}
+        # The FEATURE gate, not just the key. `giphy_enabled?/0` requires
+        # the toggle AND a key, while this required only the key — so with
+        # the toggle off the picker was hidden and a crafted `giphy_search`
+        # event still spent the host's Giphy quota. The hidden control was
+        # never the control.
+        if not giphy_enabled?() do
+          {:error, :giphy_disabled}
+        else
+          do_search_giphy(trimmed, opts)
+        end
+    end
+  end
 
-          api_key ->
-            rating = get_giphy_rating()
-            limit = Keyword.get(opts, :limit, 24)
+  defp do_search_giphy(trimmed, opts) do
+    case get_giphy_api_key() do
+      "" ->
+        {:error, :missing_api_key}
 
-            try do
-              case GiphyApi.search(trimmed,
-                     api_key: api_key,
-                     rating: rating,
-                     limit: limit
-                   ) do
-                {:ok, results} ->
-                  {:ok, results |> Enum.map(&normalize_giphy_gif/1) |> Enum.reject(&is_nil/1)}
+      api_key ->
+        rating = get_giphy_rating()
+        limit = Keyword.get(opts, :limit, 24)
 
-                {:error, _} = err ->
-                  err
-              end
-            rescue
-              e ->
-                Logger.warning("Giphy search failed: #{inspect(e)}")
-                {:error, :giphy_error}
-            end
+        try do
+          case GiphyApi.search(trimmed,
+                 api_key: api_key,
+                 rating: rating,
+                 limit: limit
+               ) do
+            {:ok, results} ->
+              {:ok, results |> Enum.map(&normalize_giphy_gif/1) |> Enum.reject(&is_nil/1)}
+
+            {:error, _} = err ->
+              err
+          end
+        rescue
+          e ->
+            # The key rides in the query string, so `inspect(e)` on a
+            # Req exception can write it to the log in plaintext.
+            Logger.warning("[PhoenixKitComments] Giphy search failed: #{inspect(e.__struct__)}")
+            {:error, :giphy_error}
         end
     end
   end

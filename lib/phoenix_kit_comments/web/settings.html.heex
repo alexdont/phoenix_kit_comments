@@ -267,6 +267,7 @@
           <div class="flex gap-3 pt-4">
             <button
               type="submit"
+              phx-disable-with={gettext("Saving…")}
               class={["btn btn-primary flex-1", if(@saving, do: "loading", else: "")]}
               disabled={@saving}
             >
@@ -459,7 +460,8 @@
                               >
                                 {gettext("Cancel")}
                               </button>
-                              <button type="submit" class="btn btn-primary btn-xs">
+                              <button type="submit"
+              phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-xs">
                                 {gettext("Save")}
                               </button>
                             </div>
@@ -580,7 +582,8 @@
                       >
                         {gettext("Cancel")}
                       </button>
-                      <button type="submit" class="btn btn-primary btn-xs">
+                      <button type="submit"
+              phx-disable-with={gettext("Saving…")} class="btn btn-primary btn-xs">
                         {gettext("Save")}
                       </button>
                     </div>
@@ -710,7 +713,8 @@
                       </div>
                     <% end %>
                     <div class="flex justify-end">
-                      <button type="submit" class="btn btn-sm btn-outline btn-warning">
+                      <button type="submit"
+              phx-disable-with={gettext("Saving…")} class="btn btn-sm btn-outline btn-warning">
                         <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
                       </button>
                     </div>
@@ -762,7 +766,8 @@
               />
             </div>
             <div class="flex justify-end">
-              <button type="submit" class="btn btn-sm btn-outline btn-primary">
+              <button type="submit"
+              phx-disable-with={gettext("Saving…")} class="btn btn-sm btn-outline btn-primary">
                 <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Add")}
               </button>
             </div>

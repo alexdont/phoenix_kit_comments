@@ -191,14 +191,15 @@
       class="text-sm text-base-content/70"
       data-bulk-text-template={gettext("%{count} selected", count: "%{count}")}
     ></span>
-    <button data-bulk-action="bulk_approve" class="btn btn-success btn-xs">
+    <button data-bulk-action="bulk_approve" phx-disable-with={gettext("Approving…")} class="btn btn-success btn-xs">
       {gettext("Approve")}
     </button>
-    <button data-bulk-action="bulk_hide" class="btn btn-warning btn-xs">
+    <button data-bulk-action="bulk_hide" phx-disable-with={gettext("Hiding…")} class="btn btn-warning btn-xs">
       {gettext("Hide")}
     </button>
     <button
       data-bulk-action="bulk_delete_comments"
+      phx-disable-with={gettext("Deleting…")}
       class="btn btn-error btn-xs"
       data-confirm={gettext("Delete selected comments?")}
     >

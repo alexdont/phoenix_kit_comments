@@ -111,6 +111,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
      |> assign(:giphy_query, "")
      |> assign(:giphy_results, [])
      |> assign(:giphy_selected, nil)
+     |> assign(:giphy_searching?, false)
      |> assign(:attach_menu_open?, false)
      |> assign(:recording_audio?, false)
      |> assign(:liked_comment_uuids, MapSet.new())
@@ -481,20 +482,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("giphy_search", %{"value" => query}, socket) do
-    case PhoenixKitComments.search_giphy(query) do
-      {:ok, results} ->
-        {:noreply,
-         socket
-         |> assign(:giphy_query, query)
-         |> assign(:giphy_results, results)}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> assign(:giphy_query, query)
-         |> assign(:giphy_results, [])
-         |> put_flash(:error, gettext("Giphy search failed. Check the API key in settings."))}
-    end
+    # Off the LiveView process. This called out to api.giphy.com INSIDE
+    # `handle_event`, so a slow or unreachable Giphy blocked every other
+    # event on the page — typing, likes, replies, navigation — for the full
+    # request timeout, with the UI frozen and no indication why.
+    #
+    # `start_async` also gives the in-flight guard this never had: a
+    # keystroke supersedes the previous search instead of stacking requests
+    # against the host's quota.
+    {:noreply,
+     socket
+     |> assign(:giphy_query, query)
+     |> assign(:giphy_searching?, true)
+     |> start_async(:giphy_search, fn -> PhoenixKitComments.search_giphy(query) end)}
   end
 
   def handle_event("giphy_search", _params, socket), do: {:noreply, socket}
@@ -1013,6 +1013,37 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> partition_upload_results()
   end
 
+  @impl true
+  def handle_async(:giphy_search, {:ok, {:ok, results}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:giphy_searching?, false)
+     |> assign(:giphy_results, results)}
+  end
+
+  def handle_async(:giphy_search, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:giphy_searching?, false)
+     |> assign(:giphy_results, [])
+     |> put_flash(:error, giphy_error_message(reason))}
+  end
+
+  def handle_async(:giphy_search, {:exit, _reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:giphy_searching?, false)
+     |> assign(:giphy_results, [])
+     |> put_flash(:error, gettext("Giphy search failed. Please try again."))}
+  end
+
+  defp giphy_error_message(:giphy_disabled), do: gettext("GIFs are turned off here.")
+
+  defp giphy_error_message(:missing_api_key),
+    do: gettext("Giphy search failed. Check the API key in settings.")
+
+  defp giphy_error_message(_other), do: gettext("Giphy search failed. Please try again.")
+
   defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
 
   defp store_entry(meta, entry, user_uuid) do
@@ -1274,7 +1305,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   phx-target={@myself}
                   class="input input-bordered input-sm flex-1 text-base font-bold"
                 />
-                <button type="submit" class="btn btn-primary btn-xs">
+                <button
+                  type="submit"
+                  phx-disable-with={gettext("Saving…")}
+                  class="btn btn-primary btn-xs"
+                >
                   <.icon name="hero-check" class="w-3.5 h-3.5" />
                 </button>
                 <button
@@ -1374,7 +1409,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               >
                 {gettext("Cancel")}
               </button>
-              <button type="submit" class="btn btn-primary btn-sm">
+              <button
+                type="submit"
+                phx-disable-with={gettext("Saving…")}
+                class="btn btn-primary btn-sm"
+              >
                 <.icon name="hero-check" class="w-4 h-4 mr-1" /> {gettext("Save")}
               </button>
             </div>
@@ -2124,7 +2163,15 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           >
             {gettext("Hide")}
           </button>
-          <button type="submit" class="btn btn-primary btn-sm">
+          <%!-- Without this a double-click on a slow link posted the same
+               comment twice: two events queue, both carry the same text,
+               attachments are consumed by the first and the second lands as
+               a text-only twin. --%>
+          <button
+            type="submit"
+            phx-disable-with={gettext("Posting…")}
+            class="btn btn-primary btn-sm"
+          >
             <.icon name="hero-paper-airplane" class="w-4 h-4 mr-2" /> {@submit_label}
           </button>
         </div>

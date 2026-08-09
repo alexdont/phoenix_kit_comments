@@ -628,6 +628,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status not in ["published", "deleted"]}
         phx-click="approve"
+        phx-disable-with={gettext("Approving…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-check"
         label={gettext("Approve")}
@@ -636,6 +637,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status not in ["hidden", "deleted"]}
         phx-click="hide"
+        phx-disable-with={gettext("Hiding…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-eye-slash"
         label={gettext("Hide")}
@@ -644,6 +646,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status == "deleted"}
         phx-click="restore"
+        phx-disable-with={gettext("Restoring…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-arrow-uturn-left"
         label={gettext("Restore")}
@@ -654,6 +657,7 @@ defmodule PhoenixKitComments.Web.Index do
         :if={@comment.status != "deleted"}
         phx-click="delete"
         phx-value-uuid={@comment.uuid}
+        phx-disable-with={gettext("Deleting…")}
         data-confirm={gettext("Delete this comment?")}
         icon="hero-trash"
         label={gettext("Delete")}
