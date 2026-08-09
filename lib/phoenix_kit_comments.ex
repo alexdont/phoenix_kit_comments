@@ -1009,7 +1009,16 @@ defmodule PhoenixKitComments do
   atomically. Returns `{:ok, :unliked}` or `{:error, :not_found}`.
   """
   def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
+    # In a transaction like its counterpart: the delete and the counter
+    # decrement are two statements, and a crash between them orphaned the
+    # count. `like_comment/2` always wrapped them; this one did not.
+    {:ok, removed?} =
+      repo().transaction(fn ->
+        lock_comment(comment_uuid)
+        maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count)
+      end)
+
+    if removed? do
       result = {:ok, :unliked}
       after_reaction(result, comment_uuid, user_uuid)
       result
@@ -1079,7 +1088,13 @@ defmodule PhoenixKitComments do
   `{:error, :not_found}`.
   """
   def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
+    {:ok, removed?} =
+      repo().transaction(fn ->
+        lock_comment(comment_uuid)
+        maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count)
+      end)
+
+    if removed? do
       result = {:ok, :undisliked}
       after_reaction(result, comment_uuid, user_uuid)
       result
@@ -1170,6 +1185,10 @@ defmodule PhoenixKitComments do
   # Postgrex "no unique or exclusion constraint matching" on every
   # insert. The `reaction_exists?/3` precheck is therefore the dedup.
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
+    # Serialised on the parent comment row — see `lock_comment/1`. Without
+    # it this is a check-then-insert with nothing underneath it.
+    lock_comment(comment_uuid)
+
     if reaction_exists?(schema, comment_uuid, user_uuid) do
       false
     else
@@ -1188,6 +1207,34 @@ defmodule PhoenixKitComments do
     end
   end
 
+  # `SELECT ... FOR UPDATE` on the comment being reacted to.
+  #
+  # There is no unique index on (comment_uuid, user_uuid): the original
+  # UNIQUE(comment_id, user_id) was dropped when the integer `user_id`
+  # column was removed during the uuid-FK migration and nothing recreated
+  # it on `user_uuid`. The schemas still declare
+  # `unique_constraint(..., name: :uq_comments_likes_comment_user)` — that
+  # is dead code, because Ecto only turns a DATABASE violation into a
+  # changeset error and there is no database constraint to violate.
+  #
+  # So `reaction_exists?/3` really was the only dedup, and a SELECT then an
+  # INSERT in READ COMMITTED is not one: two clicks in the same instant both
+  # saw "no reaction", both inserted, and the counter went to 2 for one
+  # user. Taking a row lock on the parent makes concurrent reactions to the
+  # SAME comment serialise, which is exactly the scope that matters.
+  #
+  # Restoring the index in core's chain is still worth doing — it would make
+  # this correct even for writers that bypass this function — but this
+  # closes the hole without a cross-repo migration.
+  defp lock_comment(comment_uuid) do
+    from(c in Comment, where: c.uuid == ^comment_uuid, lock: "FOR UPDATE", select: c.uuid)
+    |> repo().one()
+  rescue
+    # Outside a transaction Postgres refuses FOR UPDATE; the callers all run
+    # inside one, but a future caller that does not should not crash.
+    _ -> nil
+  end
+
   defp reaction_exists?(schema, comment_uuid, user_uuid) do
     repo().exists?(
       from(r in schema,
@@ -1204,31 +1251,33 @@ defmodule PhoenixKitComments do
       |> repo().delete_all()
 
     if count > 0 do
-      decrement_comment_counter(comment_uuid, counter_field)
+      # By the number ACTUALLY deleted, not by one. There is no unique index
+      # on (comment_uuid, user_uuid) — see `insert_reaction/4` — so duplicate
+      # rows are reachable, and decrementing by one for an N-row delete left
+      # the counter permanently above the truth with no way for a user to
+      # bring it back down.
+      decrement_comment_counter(comment_uuid, counter_field, count)
       true
     else
       false
     end
   end
 
-  defp increment_comment_counter(comment_uuid, :like_count) do
+  # One pair instead of four near-identical clauses. The counter field is
+  # already an atom chosen by the caller from a closed set, so it can be
+  # interpolated into the update directly.
+  defp increment_comment_counter(comment_uuid, counter_field) do
     from(c in Comment, where: c.uuid == ^comment_uuid)
-    |> repo().update_all(inc: [like_count: 1])
+    |> repo().update_all(inc: [{counter_field, 1}])
   end
 
-  defp increment_comment_counter(comment_uuid, :dislike_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid)
-    |> repo().update_all(inc: [dislike_count: 1])
-  end
-
-  defp decrement_comment_counter(comment_uuid, :like_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid and c.like_count > 0)
-    |> repo().update_all(inc: [like_count: -1])
-  end
-
-  defp decrement_comment_counter(comment_uuid, :dislike_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid and c.dislike_count > 0)
-    |> repo().update_all(inc: [dislike_count: -1])
+  defp decrement_comment_counter(comment_uuid, counter_field, by) do
+    # The floor still holds: `field >= by` rather than `> 0`, so a decrement
+    # that would go negative is skipped entirely instead of clamping halfway.
+    from(c in Comment,
+      where: c.uuid == ^comment_uuid and field(c, ^counter_field) >= ^by
+    )
+    |> repo().update_all(inc: [{counter_field, -by}])
   end
 
   defp count_all_comments(opts \\ []) do
@@ -1362,6 +1411,27 @@ defmodule PhoenixKitComments do
   # author, not the reacting user; self-action skipping is the host's call. The
   # whole thing is best-effort: a DB error here must not fail the (already
   # committed) reaction, so it's rescued and logged.
+  # `:already_liked` / `:already_disliked` are NOT no-ops. Both write paths
+  # remove the opposing reaction before deciding, so a repeat click still
+  # commits a delete and a counter change — and this clause used to skip
+  # them, leaving every other subscriber showing a stale count until
+  # something unrelated forced a reload.
+  #
+  # The host CALLBACK stays scoped to real state changes (a second like is
+  # not a new like), so only the broadcast fires for the repeat case.
+  defp after_reaction({:ok, action}, comment_uuid, _liker_uuid)
+       when action in [:already_liked, :already_disliked] do
+    case get_comment(comment_uuid) do
+      %Comment{resource_type: resource_type, resource_uuid: resource_uuid} ->
+        broadcast_change(resource_type, resource_uuid, :reaction)
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  end
+
   defp after_reaction({:ok, action}, comment_uuid, liker_uuid)
        when action in [:liked, :unliked, :disliked, :undisliked] do
     case get_comment(comment_uuid) do
