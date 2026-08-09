@@ -162,7 +162,13 @@ defmodule PhoenixKitComments.Comment do
     ])
     |> validate_required([:resource_type, :resource_uuid, :user_uuid])
     |> validate_inclusion(:status, ["published", "hidden", "deleted", "pending"])
-    |> validate_length(:content, max: 10_000)
+    # Matches the ceiling `comments_max_length` can be clamped to
+    # (`Web.Settings` allows up to 100_000). It used to be 10_000 while the
+    # setting went to 100_000, so an admin raising the setting produced
+    # comments that passed the context's own length check and were then
+    # refused by the changeset with "should be at most 10000 character(s)" —
+    # a limit the admin had explicitly changed.
+    |> validate_length(:content, max: 100_000)
     |> validate_length(:resource_type, max: 50)
     |> ensure_content_not_nil()
     |> validate_content_or_media(opts)

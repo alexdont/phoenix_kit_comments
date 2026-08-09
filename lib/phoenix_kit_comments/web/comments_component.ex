@@ -60,6 +60,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   alias PhoenixKit.Modules.Storage.URLSigner
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Users.Auth.User
+
+  require Logger
   alias PhoenixKit.Users.Roles
 
   # Leaf is an optional dep. When present, the comment form swaps
@@ -347,7 +349,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       attribution: resolve_attribution(socket, params)
     }
 
-    entry_count = length(socket.assigns.uploads.attachment.entries)
+    entries = socket.assigns.uploads.attachment.entries
+    entry_count = length(entries)
 
     # Precheck before `consume_uploaded_entries` so depth / length /
     # cap / feature-flag failures don't burn the upload — the entries
@@ -362,7 +365,17 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
            entry_count
          ) do
       :ok ->
-        do_create_comment(socket, base_attrs)
+        # `consume_uploaded_entries/3` raises "cannot consume uploaded files
+        # when entries are still in progress", and a LiveComponent raising
+        # takes the whole host LiveView with it — composer draft, staged
+        # files and any sibling state. The submit button has no disabled
+        # state while a file is climbing, so this was one impatient click on
+        # a slow connection.
+        if uploads_done?(entries) do
+          do_create_comment(socket, base_attrs)
+        else
+          {:noreply, put_flash(socket, :error, gettext("Wait for uploads to finish."))}
+        end
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, create_error_message(reason))}
@@ -517,13 +530,25 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
 
   @impl true
   def handle_event("reply_to", %{"id" => comment_uuid}, socket) do
-    {:noreply,
-     socket
-     |> assign(:reply_to, comment_uuid)
-     |> assign(:composer_open_at, nil)
-     |> assign(:new_comment, "")
-     |> assign(:editing_uuid, nil)
-     |> assign(:editing_content, "")}
+    # Validated against THIS thread. The delete and edit paths already check
+    # that a comment belongs to the current resource; the reply path took
+    # any string. A uuid from another resource was accepted by
+    # `create_comment/4` (the FK is to comments, not to the resource), and
+    # `get_comment_tree/2` only walks roots of this resource — so the reply
+    # was stored, published and counted, and rendered in neither thread. The
+    # author saw "Comment added" and their comment nowhere. A malformed uuid
+    # raised CastError on submit and killed the LiveView.
+    if find_comment_in_tree(socket.assigns.comments, comment_uuid) do
+      {:noreply,
+       socket
+       |> assign(:reply_to, comment_uuid)
+       |> assign(:composer_open_at, nil)
+       |> assign(:new_comment, "")
+       |> assign(:editing_uuid, nil)
+       |> assign(:editing_content, "")}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -988,6 +1013,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
     |> partition_upload_results()
   end
 
+  defp uploads_done?(entries), do: Enum.all?(entries, & &1.done?)
+
   defp store_entry(meta, entry, user_uuid) do
     opts = [
       filename: entry.client_name,
@@ -1008,7 +1035,11 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         {:ok, Enum.map(oks, fn {:ok, uuid} -> uuid end)}
 
       {_, [{:error, reason} | _]} ->
-        {:error, gettext("Upload failed: %{reason}", reason: inspect(reason))}
+        # Logged, not shown. `reason` comes back from storage as raw strings,
+        # provider errors and changesets — bucket names and internal paths
+        # in a banner the uploader reads.
+        Logger.warning("[PhoenixKitComments] attachment upload failed: #{inspect(reason)}")
+        {:error, gettext("Upload failed. Please try again.")}
     end
   end
 

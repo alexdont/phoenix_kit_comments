@@ -119,19 +119,28 @@ defmodule PhoenixKitComments do
   end
 
   @doc "Returns the configured maximum comment depth."
+  # `n > 0` and a rescue, matching `get_max_attachments/0`. Without the
+  # guard a stored "0" made `validate_depth/1` (`depth >= max`) reject EVERY
+  # comment with "Reply nesting is too deep", and without the rescue an
+  # unreachable settings store took the whole call down.
   def get_max_depth do
     case Integer.parse(Settings.get_setting("comments_max_depth", "10")) do
-      {n, _} -> n
-      :error -> 10
+      {n, _} when n > 0 -> n
+      _ -> 10
     end
+  rescue
+    _ -> 10
   end
 
   @doc "Returns the configured maximum comment length."
+  # Same shape: a stored "0" here rejected every non-empty comment.
   def get_max_length do
     case Integer.parse(Settings.get_setting("comments_max_length", "10000")) do
-      {n, _} -> n
-      :error -> 10_000
+      {n, _} when n > 0 -> n
+      _ -> 10_000
     end
+  rescue
+    _ -> 10_000
   end
 
   # ============================================================================
@@ -584,12 +593,25 @@ defmodule PhoenixKitComments do
 
   Returns `nil` if not found.
   """
-  def get_comment(id, opts \\ []) do
-    preloads = Keyword.get(opts, :preload, [])
+  def get_comment(id, opts \\ [])
 
-    case repo().get(Comment, id) do
-      nil -> nil
-      comment -> repo().preload(comment, preloads)
+  # Callers pass raw `phx-value-uuid` straight in. `Repo.get/2` on a
+  # malformed uuid raises Ecto.Query.CastError, which kills the LiveView —
+  # and `save_edit` reads `socket.assigns.editing_uuid`, which is nil when
+  # no edit is open, so `Repo.get(Comment, nil)` raised ArgumentError. User
+  # uuids and file uuids on these same paths were already validated; comment
+  # uuids were the gap. "Not a uuid" and "no such comment" are the same
+  # answer to a caller.
+  def get_comment(id, _opts) when not is_binary(id), do: nil
+
+  def get_comment(id, opts) do
+    if UUIDUtils.valid?(id) do
+      preloads = Keyword.get(opts, :preload, [])
+
+      case repo().get(Comment, id) do
+        nil -> nil
+        comment -> repo().preload(comment, preloads)
+      end
     end
   end
 
@@ -745,8 +767,12 @@ defmodule PhoenixKitComments do
   """
   def bulk_update_status(comment_uuids, status)
       when is_list(comment_uuids) and status in ["published", "hidden", "deleted", "pending"] do
+    # Filtered before the query: these arrive from the client, and a single
+    # non-uuid element raises Ecto.Query.CastError for the whole batch.
+    valid_uuids = Enum.filter(comment_uuids, &UUIDUtils.valid?/1)
+
     comments =
-      from(c in Comment, where: c.uuid in ^comment_uuids)
+      from(c in Comment, where: c.uuid in ^valid_uuids)
       |> repo().all()
 
     Enum.reduce(comments, {0, 0}, fn comment, {ok, err} ->
@@ -1325,6 +1351,18 @@ defmodule PhoenixKitComments do
     max = get_max_length()
     content = attrs[:content] || attrs["content"] || ""
 
+    # A composer submitting `comment[x]=y` instead of `comment=y` put a MAP
+    # here, and `String.length/1` on it raised FunctionClauseError — killing
+    # the LiveView and writing the user's draft into the crash report as a
+    # side effect. Anything that is not a string is not a valid body.
+    if not is_binary(content) do
+      {:error, :invalid_content}
+    else
+      check_content_length(content, max)
+    end
+  end
+
+  defp check_content_length(content, max) do
     if String.length(content) > max do
       {:error, :content_too_long}
     else
