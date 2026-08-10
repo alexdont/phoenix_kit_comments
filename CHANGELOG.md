@@ -2,6 +2,70 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.3.0 - 2026-08-10
+
+### Changed
+
+- **⚠️ Requires `phoenix_kit ~> 2.0`.** The core pin moved to `~> 2.0`, so this
+  release no longer resolves against core 1.7.
+
+  Core 2.0.0 squashes the migration chain into a single `V135` baseline and makes
+  V135 the chain's floor: `mix ecto.migrate` now *refuses* on a database below it
+  rather than migrating. Check `mix phoenix_kit.status` **before** upgrading. A
+  host below V135 must install `phoenix_kit 1.7.236` — the migration bridge, the
+  last release carrying the full pre-squash chain — migrate until the reported
+  version is at least V135, and only then move to 2.0.
+
+  This package does not call migration internals, so the change is the pin
+  itself.
+
+### Security
+
+- **Stored XSS in every comment body (PR #31).** Bodies render with MDEx
+  `unsafe: true`, which disables MDEx's escaping and makes whatever runs next
+  the security boundary — that was six regexes over the rendered string, a
+  blocklist over HTML. Two payloads went through untouched: `<script>alert(1)`
+  with no closing tag (the pattern required a matching `</script>`) and
+  `<a href=javascript:alert(1)>` (the pattern required the value to be quoted).
+  Either executed for every reader of a thread **and again in the admin
+  moderation list**, which renders the same component — so an unprivileged
+  commenter ran script in an owner's authenticated session.
+
+  Rendering now uses MDEx's `:sanitize` allow-list (ammonia), which drops
+  unknown tags and every attribute outside the allowed set instead of matching
+  against a pattern. MDEx's default list permits `style` on `div`, enough to
+  lay an overlay over the moderation UI's own buttons, so that is stripped too.
+  Ten payloads are pinned by tests.
+- **`save_decoration` had no authorization check at all** — a logged-out
+  visitor could rename any host record backed by a visible comment, and the
+  `send_update` the host received was byte-identical to a legitimate one.
+- **Admin reads were unguarded while every write was checked.** An admin
+  *without* the `comments` permission could read every comment on the platform,
+  commenter emails, and the Giphy API key as a form value.
+- **`@enabled` gated only the template**, so writes landed on a disabled thread.
+- **`save_edit` forwarded the decoration before checking permission**, so a
+  refused request still committed half an edit.
+
+### Fixed
+
+- **Reaction counters were inflatable.** Dedup was a SELECT-then-INSERT with no
+  unique index behind it — the index was dropped during the uuid-FK migration
+  and never recreated, which also left the schemas' `unique_constraint` as dead
+  code. Reactions now serialise on the parent comment row.
+- **The counter drifted permanently once duplicates existed** — `delete_all`
+  removes N rows while the decrement was hardcoded to 1.
+- **A repeat click committed a write and reported nothing** — both paths remove
+  the opposing reaction before deciding, and `after_reaction/3` skipped exactly
+  those two atoms.
+
+### Changed
+
+- **⚠️ Breaking (small): `render_markdown/2` is now `render_markdown/1`,** and
+  the `sanitize` attr is gone from `<.comment_markdown>`. There is no caller for
+  whom skipping sanitisation of a user-authored body would be correct, and an
+  opt-out is one `sanitize={false}` away from stored XSS on every reader. No
+  sibling module in the umbrella calls this function.
+
 ## 0.2.15 — 2026-07-27
 
 ### Added
