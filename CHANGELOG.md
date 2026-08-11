@@ -2,6 +2,56 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.0 - 2026-08-11
+
+Metadata-keyed reads and writes, a declared resource-handler contract, and the
+translated sidebar labels.
+
+### Added
+
+- **Metadata-keyed reads** (#34). `list_comments/3` takes a `:metadata` map of
+  keys that must match, and `:any` in place of a resource uuid to list across a
+  whole resource type. `resource_uuid` is a UUID column and plenty of hosts key
+  their comments on something that isn't one — a `(source, slug, chapter)`
+  triple — so they mint a throwaway uuid and put the real key in `metadata`. The
+  listing they actually want was not expressible, and they dropped to schemaless
+  SQL against this package's own table to get it.
+
+- **`update_metadata/2` and `merge_metadata/3`** (#34). Single atomic
+  `metadata || patch` writes, so they cannot lose a concurrent writer's keys the
+  way read-modify-write does. `merge_metadata/3` is the rename case — a host
+  renames a slug and every comment carrying the old one has to follow. An empty
+  match is refused rather than treated as "everything".
+
+- **`count_replies/2`** (#34) — `parent_uuid => count` for a batch of parents in
+  one grouped query, with a `0` entry for every uuid asked about, so a thread
+  list renders uniformly without an N+1.
+
+- **`PhoenixKitComments.ResourceHandler.callbacks/0` and `event_callbacks/0`**
+  (#35), and the rationale for adopting the behaviour at all: dispatch is by
+  `function_exported?/3`, so a misnamed or wrong-arity callback is
+  indistinguishable from one you chose not to write — nothing fires and there is
+  no error to find it by.
+
+### Changed
+
+- **Sidebar tab labels are translated** (#33). The admin and settings tabs
+  declare `gettext_backend` and `gettext_domain`, which they need in order to
+  resolve at all.
+
+### Fixed
+
+- **Estonian and Russian entries that carried another string's translation**
+  (#33), and entries whose `fuzzy` flag meant Gettext ignored them at runtime
+  and showed the English msgid instead. Two plural forms had also dropped their
+  `%{action}` interpolation, so a bulk-action result read "5 comments" instead
+  of "5 comments deleted".
+
+- **`count_replies/2` reported zeros silently on a failed query.** "0 replies"
+  on a thread that has replies is a plausible-looking wrong answer rather than an
+  obviously broken one, and nothing anywhere distinguished it from a quiet
+  thread. It now logs before degrading.
+
 ## 0.3.0 - 2026-08-10
 
 ### Changed
