@@ -288,4 +288,15 @@ defmodule PhoenixKitCommentsTest do
       assert cs.valid?
     end
   end
+
+  describe "merge_metadata/3 guard" do
+    # The bulk rename is the one call here that can rewrite a whole resource
+    # type in a single statement, and an empty match is what a typo looks
+    # like. Refused before it reaches the database rather than after.
+    test "refuses an empty match" do
+      assert_raise ArgumentError, ~r/non-empty match/, fn ->
+        PhoenixKitComments.merge_metadata("chapter", %{}, %{"slug" => "new"})
+      end
+    end
+  end
 end
