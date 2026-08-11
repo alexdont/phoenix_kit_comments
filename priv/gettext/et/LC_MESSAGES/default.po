@@ -978,9 +978,9 @@ msgstr "%{ok} %{action}, ebaõnnestus: %{failed}"
 
 #: lib/phoenix_kit_comments/web/index.ex:656
 #: lib/phoenix_kit_comments/web/index.html.heex:199
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Approving…"
-msgstr "Kinnita"
+msgstr "Kinnitamine…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:291
 #, elixir-autogen, elixir-format
@@ -999,9 +999,9 @@ msgid "Deleting…"
 msgstr "Kustutamine…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1061
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Failed to attach the recording."
-msgstr "Reaktsiooni uuendamine ebaõnnestus"
+msgstr "Salvestise lisamine ebaõnnestus."
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1033
 #, elixir-autogen, elixir-format
@@ -1066,14 +1066,14 @@ msgid "Recording failed. Please try again."
 msgstr "Salvestamine ebaõnnestus. Proovi uuesti."
 
 #: lib/phoenix_kit_comments/web/settings.ex:324
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Resource type is required"
-msgstr "Ressursi tüüp"
+msgstr "Ressursi tüüp on kohustuslik"
 
 #: lib/phoenix_kit_comments/web/index.ex:674
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Restoring…"
-msgstr "Taasta"
+msgstr "Taastamine…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1343
 #: lib/phoenix_kit_comments/web/comments_component.ex:1446
@@ -1082,7 +1082,7 @@ msgstr "Taasta"
 #: lib/phoenix_kit_comments/web/settings.html.heex:593
 #: lib/phoenix_kit_comments/web/settings.html.heex:724
 #: lib/phoenix_kit_comments/web/settings.html.heex:777
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Saving…"
 msgstr "Salvestamine..."
 
@@ -1122,17 +1122,17 @@ msgid "You do not have access to comments."
 msgstr "Sul puudub ligipääs kommentaaridele."
 
 #: lib/phoenix_kit_comments/web/index.ex:253
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "approved"
-msgstr "Kinnita"
+msgstr "Kinnitatud"
 
 #: lib/phoenix_kit_comments/web/index.ex:255
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "deleted"
 msgstr "Kustutatud"
 
 #: lib/phoenix_kit_comments/web/index.ex:254
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "hidden"
 msgstr "Peidetud"
 

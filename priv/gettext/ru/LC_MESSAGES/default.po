@@ -982,9 +982,9 @@ msgstr "%{ok} %{action}, ошибок: %{failed}"
 
 #: lib/phoenix_kit_comments/web/index.ex:656
 #: lib/phoenix_kit_comments/web/index.html.heex:199
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Approving…"
-msgstr "Одобрить"
+msgstr "Одобрение…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:291
 #, elixir-autogen, elixir-format
@@ -1003,9 +1003,9 @@ msgid "Deleting…"
 msgstr "Удаление…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1061
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Failed to attach the recording."
-msgstr "Не удалось обновить реакцию"
+msgstr "Не удалось прикрепить запись."
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1033
 #, elixir-autogen, elixir-format
@@ -1070,14 +1070,14 @@ msgid "Recording failed. Please try again."
 msgstr "Запись не удалась. Попробуйте ещё раз."
 
 #: lib/phoenix_kit_comments/web/settings.ex:324
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Resource type is required"
-msgstr "Тип ресурса"
+msgstr "Требуется тип ресурса"
 
 #: lib/phoenix_kit_comments/web/index.ex:674
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Restoring…"
-msgstr "Восстановить"
+msgstr "Восстановление…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1343
 #: lib/phoenix_kit_comments/web/comments_component.ex:1446
@@ -1086,7 +1086,7 @@ msgstr "Восстановить"
 #: lib/phoenix_kit_comments/web/settings.html.heex:593
 #: lib/phoenix_kit_comments/web/settings.html.heex:724
 #: lib/phoenix_kit_comments/web/settings.html.heex:777
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Saving…"
 msgstr "Сохранение..."
 
@@ -1126,17 +1126,17 @@ msgid "You do not have access to comments."
 msgstr "У вас нет доступа к комментариям."
 
 #: lib/phoenix_kit_comments/web/index.ex:253
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "approved"
-msgstr "Одобрить"
+msgstr "Одобрен"
 
 #: lib/phoenix_kit_comments/web/index.ex:255
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "deleted"
 msgstr "Удалён"
 
 #: lib/phoenix_kit_comments/web/index.ex:254
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "hidden"
 msgstr "Скрыт"
 

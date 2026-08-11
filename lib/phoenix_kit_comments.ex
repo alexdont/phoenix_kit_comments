@@ -353,6 +353,8 @@ defmodule PhoenixKitComments do
       Tab.new!(
         id: :admin_comments,
         label: "Comments",
+        gettext_backend: PhoenixKitComments.Gettext,
+        gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",
         path: "comments",
         priority: 590,
@@ -371,6 +373,8 @@ defmodule PhoenixKitComments do
       Tab.new!(
         id: :admin_settings_comments,
         label: "Comments",
+        gettext_backend: PhoenixKitComments.Gettext,
+        gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",
         path: "comments",
         priority: 924,
