@@ -19,6 +19,13 @@ defmodule PhoenixKitComments do
         "post" => PhoenixKitPosts
       }
 
+  The contract is `PhoenixKitComments.ResourceHandler`. Adopting it is
+  optional and changes nothing at runtime, but it is worth doing: dispatch is
+  by `function_exported?/3`, so a misnamed or wrong-arity callback is
+  indistinguishable from one you chose not to write — nothing fires, and there
+  is no error anywhere to find it by. `@behaviour` turns that into a compile
+  warning at the point of the mistake.
+
   Handler modules may implement any of these optional callbacks (each guarded
   by `function_exported?/3`, so implement only what you need):
 
@@ -751,7 +758,18 @@ defmodule PhoenixKitComments do
 
     Map.new(uuids, fn uuid -> {uuid, Map.get(counts, uuid, 0)} end)
   rescue
-    _ -> Map.new(Enum.uniq(parent_uuids), &{&1, 0})
+    error ->
+      # Degrading to zeros keeps a thread list rendering, but "0 replies" on a
+      # thread that has replies is a plausible-looking wrong answer, not an
+      # obviously broken one — so it has to leave a trace. Without the log
+      # there is nothing anywhere to distinguish a quiet thread from a failed
+      # query.
+      Logger.warning(
+        "PhoenixKitComments.count_replies/2 failed, reporting 0 for " <>
+          "#{length(Enum.uniq(parent_uuids))} parents: #{Exception.message(error)}"
+      )
+
+      Map.new(Enum.uniq(parent_uuids), &{&1, 0})
   end
 
   @doc """
