@@ -19,6 +19,13 @@ defmodule PhoenixKitComments do
         "post" => PhoenixKitPosts
       }
 
+  The contract is `PhoenixKitComments.ResourceHandler`. Adopting it is
+  optional and changes nothing at runtime, but it is worth doing: dispatch is
+  by `function_exported?/3`, so a misnamed or wrong-arity callback is
+  indistinguishable from one you chose not to write — nothing fires, and there
+  is no error anywhere to find it by. `@behaviour` turns that into a compile
+  warning at the point of the mistake.
+
   Handler modules may implement any of these optional callbacks (each guarded
   by `function_exported?/3`, so implement only what you need):
 
