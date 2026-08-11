@@ -628,23 +628,74 @@ defmodule PhoenixKitComments do
   - `:preload` - Associations to preload
   - `:status` - Filter by status
   - `:include_deleted` - Include `status == "deleted"` rows (default: false)
+  - `:metadata` - Map of `metadata` keys that must match, compared as text
+
+  ## Listing across a whole resource type
+
+  Pass `:any` as the resource uuid to drop the per-resource condition. This
+  exists because `resource_uuid` is a UUID column, and plenty of hosts key
+  their comments on something that isn't one — a `(source, slug, chapter)`
+  triple, say. Those hosts mint a throwaway uuid per comment and put the real
+  key in `metadata`, at which point every listing they actually want is "this
+  type, where metadata says X" — a query the API could not express, so they
+  dropped to schemaless SQL against the table and inherited its sharp edges
+  (uuid columns load as 16-byte binaries there, which fails string comparison
+  silently).
+
+      # every comment of this type for one manga, whatever chapter
+      list_comments("chapter", :any, metadata: %{"source" => "mangadex", "slug" => slug})
+
+  Metadata is compared with `->>`, i.e. as text, so match against the string
+  form of whatever was stored.
   """
   def list_comments(resource_type, resource_uuid, opts \\ []) do
     preloads = Keyword.get(opts, :preload, [])
     status = Keyword.get(opts, :status)
     include_deleted = Keyword.get(opts, :include_deleted, false)
 
-    query =
-      from(c in Comment,
-        where: c.resource_type == ^resource_type and c.resource_uuid == ^resource_uuid,
-        order_by: [asc: c.inserted_at]
-      )
-
-    query = apply_status_filter(query, status, include_deleted)
-
-    query
+    from(c in Comment, where: c.resource_type == ^resource_type, order_by: [asc: c.inserted_at])
+    |> apply_resource_filter(resource_uuid)
+    |> apply_metadata_filter(Keyword.get(opts, :metadata))
+    |> apply_status_filter(status, include_deleted)
     |> repo().all()
     |> repo().preload(preloads)
+  end
+
+  @doc """
+  Counts replies for a batch of parent comments, as a `parent_uuid => count`
+  map.
+
+  Mirrors the list form of `count_comments/3`: one grouped query, and a `0`
+  entry for every uuid asked about, so a thread list renders uniformly without
+  an N+1 or a hand-rolled correlated subquery.
+
+      iex> count_replies([a, b, c])
+      %{a => 2, b => 0, c => 5}
+
+  Deleted replies are excluded unless `:status` is set explicitly or
+  `include_deleted: true` is passed — the same rule the other reads follow.
+  """
+  @spec count_replies([Ecto.UUID.t()], keyword()) ::
+          %{optional(Ecto.UUID.t()) => non_neg_integer()}
+  def count_replies(parent_uuids, opts \\ []) when is_list(parent_uuids) do
+    uuids = Enum.uniq(parent_uuids)
+
+    counts =
+      from(c in Comment,
+        where: c.parent_uuid in ^uuids,
+        group_by: c.parent_uuid,
+        select: {c.parent_uuid, count(c.uuid)}
+      )
+      |> apply_status_filter(
+        Keyword.get(opts, :status),
+        Keyword.get(opts, :include_deleted, false)
+      )
+      |> repo().all()
+      |> Map.new()
+
+    Map.new(uuids, fn uuid -> {uuid, Map.get(counts, uuid, 0)} end)
+  rescue
+    _ -> Map.new(Enum.uniq(parent_uuids), &{&1, 0})
   end
 
   @doc """
@@ -710,6 +761,105 @@ defmodule PhoenixKitComments do
   defp apply_status_filter(query, nil, false), do: where(query, [c], c.status != "deleted")
   defp apply_status_filter(query, nil, true), do: query
   defp apply_status_filter(query, status, _), do: where(query, [c], c.status == ^status)
+
+  # `:any` drops the condition entirely — see `list_comments/3` for why a
+  # resource-type-wide read is a first-class thing to want.
+  defp apply_resource_filter(query, :any), do: query
+  defp apply_resource_filter(query, uuid), do: where(query, [c], c.resource_uuid == ^uuid)
+
+  defp apply_metadata_filter(query, nil), do: query
+  defp apply_metadata_filter(query, map) when map_size(map) == 0, do: query
+
+  defp apply_metadata_filter(query, %{} = match) do
+    Enum.reduce(match, query, fn {key, value}, acc ->
+      # `->>` so the comparison is text-to-text. The alternative, containment
+      # (`@>`), would need the value typed exactly as stored and would make
+      # `"1"` and `1` different questions — a distinction no caller filtering
+      # on a slug wants to think about.
+      where(acc, [c], fragment("?->>? = ?", c.metadata, ^to_string(key), ^to_string(value)))
+    end)
+  end
+
+  @doc """
+  Merges `patch` into a comment's `metadata`, leaving every other key alone.
+
+  The write is a single atomic `metadata || patch` statement, so it cannot
+  lose a concurrent writer's keys the way read-modify-write does — and hosts
+  do not have to hand-write jsonb to retarget a comment.
+
+      iex> update_metadata(comment_uuid, %{"slug" => "new-slug"})
+      {:ok, %Comment{}}
+
+  Returns `{:error, :not_found}` if the row is gone.
+  """
+  @spec update_metadata(Ecto.UUID.t() | Comment.t(), map()) ::
+          {:ok, Comment.t()} | {:error, :not_found}
+  def update_metadata(%Comment{uuid: uuid}, patch), do: update_metadata(uuid, patch)
+
+  def update_metadata(uuid, %{} = patch) when is_binary(uuid) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    query =
+      from(c in Comment,
+        where: c.uuid == ^uuid,
+        update: [
+          set: [
+            # COALESCE first: the column is nullable, and `NULL || jsonb` is
+            # NULL — without it a null-metadata row would swallow the patch and
+            # still report success.
+            metadata: fragment("COALESCE(?, '{}'::jsonb) || ?", c.metadata, type(^patch, :map)),
+            updated_at: ^now
+          ]
+        ],
+        select: c
+      )
+
+    case repo().update_all(query, []) do
+      {1, [comment]} -> {:ok, comment}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Merges `patch` into the metadata of every comment of `resource_type` whose
+  metadata matches `match`. Returns the number of rows updated.
+
+  This is the rename case: a host keyed on a slug renames it, and every
+  comment carrying the old one has to follow. Doing that by hand means a raw
+  `metadata || jsonb_build_object(...)` UPDATE in the host, which is how a
+  schema this package owns ends up written to from outside it.
+
+      iex> merge_metadata("chapter", %{"slug" => "old"}, %{"slug" => "new"})
+      42
+
+  Matching is the same text comparison `list_comments/3` uses. An empty
+  `match` is refused rather than treated as "everything" — a typo that
+  rewrites every comment of a type is not a thing this should make easy.
+  """
+  @spec merge_metadata(String.t(), map(), map()) :: non_neg_integer()
+  def merge_metadata(_resource_type, match, _patch) when map_size(match) == 0 do
+    raise ArgumentError,
+          "merge_metadata/3 requires a non-empty match; refusing to rewrite every comment of a type"
+  end
+
+  def merge_metadata(resource_type, %{} = match, %{} = patch) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    query =
+      from(c in Comment,
+        where: c.resource_type == ^resource_type,
+        update: [
+          set: [
+            metadata: fragment("COALESCE(?, '{}'::jsonb) || ?", c.metadata, type(^patch, :map)),
+            updated_at: ^now
+          ]
+        ]
+      )
+      |> apply_metadata_filter(match)
+
+    {count, _} = repo().update_all(query, [])
+    count
+  end
 
   # ============================================================================
   # Moderation
