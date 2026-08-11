@@ -663,7 +663,7 @@ msgid "Allow users to attach images, video, audio, or files to comments. Voice m
 msgstr "Разрешить пользователям прикреплять к комментариям изображения, видео, аудио или файлы. Голосовые сообщения можно записывать прямо в браузере. Используется глобальное хранилище, настроенное в разделе Настройки → Хранилище."
 
 #: lib/phoenix_kit_comments/web/settings.html.heex:196
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Attachments"
 msgstr "Вложения"
 
@@ -681,7 +681,7 @@ msgstr "Ограничивается глобальным лимитом хра�
 
 #: lib/phoenix_kit_comments/web/settings.ex:44
 #: lib/phoenix_kit_comments/web/settings.html.heex:4
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Comments Settings"
 msgstr "Настройки комментариев"
 
@@ -696,7 +696,7 @@ msgid "Configure the standalone comments module"
 msgstr "Настройте автономный модуль комментариев"
 
 #: lib/phoenix_kit_comments/web/settings.html.heex:176
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Content Rating"
 msgstr "Рейтинг контента"
 
@@ -883,7 +883,7 @@ msgid "Rich-Text Editor"
 msgstr "Редактор форматированного текста"
 
 #: lib/phoenix_kit_comments/web/settings.html.heex:277
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Save Settings"
 msgstr "Сохранить настройки"
 
@@ -960,20 +960,20 @@ msgid "or add manually"
 msgstr "или добавьте вручную"
 
 #: lib/phoenix_kit_comments/web/index.ex:366
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "%{count} comment %{action}"
 msgid_plural "%{count} comments %{action}"
-msgstr[0] "%{count} комментарий"
-msgstr[1] "%{count} комментария"
-msgstr[2] "%{count} комментариев"
+msgstr[0] "%{count} комментарий %{action}"
+msgstr[1] "%{count} комментария %{action}"
+msgstr[2] "%{count} комментариев %{action}"
 
 #: lib/phoenix_kit_comments/web/index.ex:373
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "%{count} comment could not be %{action}"
 msgid_plural "%{count} comments could not be %{action}"
-msgstr[0] "%{count} комментарий"
-msgstr[1] "%{count} комментария"
-msgstr[2] "%{count} комментариев"
+msgstr[0] "%{count} комментарий %{action}"
+msgstr[1] "%{count} комментария %{action}"
+msgstr[2] "%{count} комментариев %{action}"
 
 #: lib/phoenix_kit_comments/web/index.ex:383
 #, elixir-autogen, elixir-format
@@ -982,9 +982,9 @@ msgstr "%{ok} %{action}, ошибок: %{failed}"
 
 #: lib/phoenix_kit_comments/web/index.ex:656
 #: lib/phoenix_kit_comments/web/index.html.heex:199
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Approving…"
-msgstr "Одобрить"
+msgstr "Одобрение…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:291
 #, elixir-autogen, elixir-format
@@ -1003,9 +1003,9 @@ msgid "Deleting…"
 msgstr "Удаление…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1061
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Failed to attach the recording."
-msgstr "Не удалось обновить реакцию"
+msgstr "Не удалось прикрепить запись."
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1033
 #, elixir-autogen, elixir-format
@@ -1070,14 +1070,14 @@ msgid "Recording failed. Please try again."
 msgstr "Запись не удалась. Попробуйте ещё раз."
 
 #: lib/phoenix_kit_comments/web/settings.ex:324
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Resource type is required"
-msgstr "Тип ресурса"
+msgstr "Требуется тип ресурса"
 
 #: lib/phoenix_kit_comments/web/index.ex:674
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Restoring…"
-msgstr "Восстановить"
+msgstr "Восстановление…"
 
 #: lib/phoenix_kit_comments/web/comments_component.ex:1343
 #: lib/phoenix_kit_comments/web/comments_component.ex:1446
@@ -1086,7 +1086,7 @@ msgstr "Восстановить"
 #: lib/phoenix_kit_comments/web/settings.html.heex:593
 #: lib/phoenix_kit_comments/web/settings.html.heex:724
 #: lib/phoenix_kit_comments/web/settings.html.heex:777
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "Saving…"
 msgstr "Сохранение..."
 
@@ -1126,17 +1126,17 @@ msgid "You do not have access to comments."
 msgstr "У вас нет доступа к комментариям."
 
 #: lib/phoenix_kit_comments/web/index.ex:253
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "approved"
-msgstr "Одобрить"
+msgstr "Одобрен"
 
 #: lib/phoenix_kit_comments/web/index.ex:255
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "deleted"
 msgstr "Удалён"
 
 #: lib/phoenix_kit_comments/web/index.ex:254
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "hidden"
 msgstr "Скрыт"
 
