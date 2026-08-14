@@ -17,7 +17,7 @@
           />
 
           <%!-- Enable Comments --%>
-          <div class="form-control w-full">
+          <div class="fieldset w-full">
             <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_enabled]" value="false" />
               <input
@@ -27,17 +27,17 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_enabled == "true"}
               />
-              <span class="label-text font-medium">{gettext("Enable Comments")}</span>
+              <span class="fieldset-legend font-medium">{gettext("Enable Comments")}</span>
             </label>
             <div class="label pt-0">
-              <span class="label-text-alt text-xs text-base-content/50">
+              <span class="fieldset-label text-xs text-base-content/50">
                 {gettext("Enable the standalone comments system across all content types")}
               </span>
             </div>
           </div>
 
           <%!-- Rich-Text Editor --%>
-          <div class="form-control w-full">
+          <div class="fieldset w-full">
             <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_rich_text]" value="false" />
               <input
@@ -47,10 +47,10 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_rich_text == "true"}
               />
-              <span class="label-text font-medium">{gettext("Rich-Text Editor")}</span>
+              <span class="fieldset-legend font-medium">{gettext("Rich-Text Editor")}</span>
             </label>
             <div class="label pt-0">
-              <span class="label-text-alt text-xs text-base-content/50">
+              <span class="fieldset-label text-xs text-base-content/50">
                 {gettext(
                   "Use the Leaf rich-text editor in the comment composer. Turn off to fall back to a plain textarea — do this if the host app hasn't registered Leaf's JS hook (otherwise the editor hangs on its loading text)."
                 )}
@@ -61,7 +61,7 @@
           <.settings_section_header icon="hero-shield-check" title={gettext("Moderation")} />
 
           <%!-- Require Moderation --%>
-          <div class="form-control w-full">
+          <div class="fieldset w-full">
             <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_moderation]" value="false" />
               <input
@@ -71,10 +71,10 @@
                 class="toggle toggle-warning shrink-0"
                 checked={@comments_moderation == "true"}
               />
-              <span class="label-text font-medium">{gettext("Require Moderation")}</span>
+              <span class="fieldset-legend font-medium">{gettext("Require Moderation")}</span>
             </label>
             <div class="label pt-0">
-              <span class="label-text-alt text-xs text-base-content/50">
+              <span class="fieldset-label text-xs text-base-content/50">
                 {gettext("New comments must be approved before appearing publicly")}
               </span>
             </div>
@@ -86,9 +86,9 @@
           />
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">
+                <span class="fieldset-legend text-base font-medium">
                   {gettext("Max Thread Depth")}
                 </span>
               </label>
@@ -98,18 +98,18 @@
                 value={@comments_max_depth}
                 min="1"
                 max="50"
-                class="input input-bordered w-full focus:input-primary"
+                class="input w-full focus:input-primary"
               />
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Maximum nesting level for reply threads (default: 10)")}
                 </span>
               </div>
             </div>
 
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">
+                <span class="fieldset-legend text-base font-medium">
                   {gettext("Max Comment Length")}
                 </span>
               </label>
@@ -119,10 +119,10 @@
                 value={@comments_max_length}
                 min="100"
                 max="100000"
-                class="input input-bordered w-full focus:input-primary"
+                class="input w-full focus:input-primary"
               />
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Maximum characters per comment (default: 10,000)")}
                 </span>
               </div>
@@ -132,7 +132,7 @@
           <.settings_section_header icon="hero-film" title={gettext("Giphy Integration")} />
 
           <%!-- Enable Giphy Picker --%>
-          <div class="form-control w-full">
+          <div class="fieldset w-full">
             <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_giphy_enabled]" value="false" />
               <input
@@ -142,19 +142,19 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_giphy_enabled == "true"}
               />
-              <span class="label-text font-medium">{gettext("Enable Giphy Picker")}</span>
+              <span class="fieldset-legend font-medium">{gettext("Enable Giphy Picker")}</span>
             </label>
             <div class="label pt-0">
-              <span class="label-text-alt text-xs text-base-content/50">
+              <span class="fieldset-label text-xs text-base-content/50">
                 {gettext("Show a GIF picker in the comment form. Requires a valid API key below.")}
               </span>
             </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">{gettext("Giphy API Key")}</span>
+                <span class="fieldset-legend text-base font-medium">{gettext("Giphy API Key")}</span>
               </label>
               <input
                 type="password"
@@ -162,18 +162,18 @@
                 value={@comments_giphy_api_key}
                 autocomplete="off"
                 placeholder={gettext("Paste your Giphy API key")}
-                class="input input-bordered w-full focus:input-primary"
+                class="input w-full focus:input-primary"
               />
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Stored in the database. Leave blank to disable.")}
                 </span>
               </div>
             </div>
 
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">{gettext("Content Rating")}</span>
+                <span class="fieldset-legend text-base font-medium">{gettext("Content Rating")}</span>
               </label>
               <label class="select w-full focus:select-primary">
                 <select name="settings[comments_giphy_rating]">
@@ -186,7 +186,7 @@
                 </select>
               </label>
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Maximum rating returned by Giphy search (default: G)")}
                 </span>
               </div>
@@ -196,7 +196,7 @@
           <.settings_section_header icon="hero-paper-clip" title={gettext("Attachments")} />
 
           <%!-- Enable Comment Attachments --%>
-          <div class="form-control w-full">
+          <div class="fieldset w-full">
             <label class="label cursor-pointer justify-start gap-4">
               <input type="hidden" name="settings[comments_attachments_enabled]" value="false" />
               <input
@@ -206,12 +206,12 @@
                 class="toggle toggle-primary shrink-0"
                 checked={@comments_attachments_enabled == "true"}
               />
-              <span class="label-text font-medium">
+              <span class="fieldset-legend font-medium">
                 {gettext("Enable Comment Attachments")}
               </span>
             </label>
             <div class="label pt-0">
-              <span class="label-text-alt text-xs text-base-content/50">
+              <span class="fieldset-label text-xs text-base-content/50">
                 {gettext(
                   "Allow users to attach images, video, audio, or files to comments. Voice messages can also be recorded in-browser. Uses the global storage backend configured under Settings → Storage."
                 )}
@@ -220,9 +220,9 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">
+                <span class="fieldset-legend text-base font-medium">
                   {gettext("Max attachments per comment")}
                 </span>
               </label>
@@ -232,18 +232,18 @@
                 value={@comments_max_attachments}
                 min="1"
                 max="10"
-                class="input input-bordered w-full focus:input-primary"
+                class="input w-full focus:input-primary"
               />
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Per-comment cap (1–10). Default: 4")}
                 </span>
               </div>
             </div>
 
-            <div class="form-control w-full">
+            <div class="fieldset w-full">
               <label class="label">
-                <span class="label-text text-base font-medium">
+                <span class="fieldset-legend text-base font-medium">
                   {gettext("Max file size (MB)")}
                 </span>
               </label>
@@ -253,10 +253,10 @@
                 value={@comments_attachment_max_size_mb}
                 min="1"
                 max="500"
-                class="input input-bordered w-full focus:input-primary"
+                class="input w-full focus:input-primary"
               />
               <div class="label">
-                <span class="label-text-alt text-xs text-base-content/50">
+                <span class="fieldset-label text-xs text-base-content/50">
                   {gettext("Clamped against the global storage cap. Default: 20")}
                 </span>
               </div>
@@ -421,20 +421,20 @@
                           >
                             <div>
                               <label class="label py-0">
-                                <span class="label-text text-xs font-semibold">
+                                <span class="fieldset-legend text-xs font-semibold">
                                   {gettext("Path")}
                                 </span>
                               </label>
                               <textarea
                                 name="resource_path[path_template]"
-                                class="textarea textarea-bordered textarea-sm w-full min-h-[4rem]"
+                                class="textarea textarea-sm w-full min-h-[4rem]"
                                 rows="2"
                                 required
                               ><%= @editing_path_value %></textarea>
                             </div>
                             <div>
                               <label class="label py-0">
-                                <span class="label-text text-xs font-semibold">
+                                <span class="fieldset-legend text-xs font-semibold">
                                   {gettext("Display title")}
                                 </span>
                               </label>
@@ -443,7 +443,7 @@
                                 name="resource_path[title_template]"
                                 value={@editing_title_value}
                                 placeholder={gettext("e.g. :metadata.slug - Ch. :metadata.chapter")}
-                                class="input input-bordered input-sm w-full"
+                                class="input input-sm w-full"
                               />
                             </div>
                             <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
@@ -545,18 +545,18 @@
                   >
                     <div>
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
+                        <span class="fieldset-legend text-xs font-semibold">{gettext("Path")}</span>
                       </label>
                       <textarea
                         name="resource_path[path_template]"
-                        class="textarea textarea-bordered textarea-sm w-full min-h-[4rem]"
+                        class="textarea textarea-sm w-full min-h-[4rem]"
                         rows="2"
                         required
                       ><%= @editing_path_value %></textarea>
                     </div>
                     <div>
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">
+                        <span class="fieldset-legend text-xs font-semibold">
                           {gettext("Display title")}
                         </span>
                       </label>
@@ -565,7 +565,7 @@
                         name="resource_path[title_template]"
                         value={@editing_title_value}
                         placeholder={gettext("e.g. :metadata.slug")}
-                        class="input input-bordered input-sm w-full"
+                        class="input input-sm w-full"
                       />
                     </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
@@ -679,22 +679,22 @@
                         </span>
                       </div>
                     </div>
-                    <div class="form-control">
+                    <div class="fieldset">
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
+                        <span class="fieldset-legend text-xs font-semibold">{gettext("Path")}</span>
                       </label>
                       <input
                         type="text"
                         name="resource_path[path_template]"
                         value={Map.get(@draft_paths, resource_type, "")}
                         placeholder={"e.g. /#{resource_type}/:uuid"}
-                        class="input input-bordered input-sm w-full"
+                        class="input input-sm w-full"
                         required
                       />
                     </div>
-                    <div class="form-control">
+                    <div class="fieldset">
                       <label class="label py-0">
-                        <span class="label-text text-xs font-semibold">
+                        <span class="fieldset-legend text-xs font-semibold">
                           {gettext("Display title")}
                         </span>
                       </label>
@@ -703,7 +703,7 @@
                         name="resource_path[title_template]"
                         value={Map.get(@draft_titles, resource_type, "")}
                         placeholder={gettext("e.g. :metadata.slug")}
-                        class="input input-bordered input-sm w-full"
+                        class="input input-sm w-full"
                       />
                     </div>
                     <%= if keys = Map.get(@metadata_keys_by_type, resource_type) do %>
@@ -737,39 +737,39 @@
         <%!-- Add new pattern manually --%>
         <div class="bg-base-200 rounded-lg p-3">
           <.form for={%{}} phx-submit="add_resource_path" class="space-y-2">
-            <div class="form-control">
+            <div class="fieldset">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">{gettext("Resource Type")}</span>
+                <span class="fieldset-legend text-xs font-semibold">{gettext("Resource Type")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[resource_type]"
                 placeholder={gettext("e.g. shoes")}
-                class="input input-bordered input-sm w-full"
+                class="input input-sm w-full"
                 required
               />
             </div>
-            <div class="form-control">
+            <div class="fieldset">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">{gettext("Path")}</span>
+                <span class="fieldset-legend text-xs font-semibold">{gettext("Path")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[path_template]"
                 placeholder={gettext("e.g. /order/shoes/:uuid")}
-                class="input input-bordered input-sm w-full"
+                class="input input-sm w-full"
                 required
               />
             </div>
-            <div class="form-control">
+            <div class="fieldset">
               <label class="label py-0">
-                <span class="label-text text-xs font-semibold">{gettext("Display title")}</span>
+                <span class="fieldset-legend text-xs font-semibold">{gettext("Display title")}</span>
               </label>
               <input
                 type="text"
                 name="resource_path[title_template]"
                 placeholder={gettext("e.g. :metadata.slug - Ch. :metadata.chapter")}
-                class="input input-bordered input-sm w-full"
+                class="input input-sm w-full"
               />
             </div>
             <div class="flex justify-end">

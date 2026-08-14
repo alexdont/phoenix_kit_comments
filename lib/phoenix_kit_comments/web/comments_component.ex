@@ -1379,7 +1379,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                   phx-keydown="cancel_decoration_edit"
                   phx-key="escape"
                   phx-target={@myself}
-                  class="input input-bordered input-sm flex-1 text-base font-bold"
+                  class="input input-sm flex-1 text-base font-bold"
                 />
                 <button
                   type="submit"
@@ -1442,7 +1442,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 value={@editing_decoration_value}
                 maxlength="200"
                 placeholder={gettext("Title")}
-                class="input input-bordered input-sm w-full text-base font-bold"
+                class="input input-sm w-full text-base font-bold"
               />
               <hr class="border-base-300" />
             <% end %>
@@ -1469,7 +1469,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             <% else %>
               <textarea
                 name="content"
-                class="textarea textarea-bordered w-full"
+                class="textarea w-full"
                 rows="3"
                 required
                 phx-hook={@ctx.mentions_on && "MentionInput"}
@@ -1937,7 +1937,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         <textarea
           name="comment"
           placeholder={@placeholder}
-          class="textarea textarea-bordered w-full"
+          class="textarea w-full"
           rows="3"
           phx-debounce="150"
           phx-hook={@ctx.mentions_on && "MentionInput"}
@@ -1973,7 +1973,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           class="checkbox checkbox-sm"
           checked={@ctx.project_attribution[:default_on] == true}
         />
-        <span class="label-text text-sm">
+        <span class="fieldset-legend text-sm">
           {gettext("Post as %{project}", project: @ctx.project_attribution[:label])}
         </span>
       </label>
@@ -2174,7 +2174,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                         value={@ctx.giphy_query}
                         placeholder={gettext("Search GIFs...")}
                         aria-label={gettext("Search GIFs")}
-                        class="input input-bordered input-sm w-full"
+                        class="input input-sm w-full"
                         phx-keyup="giphy_search"
                         phx-target={@ctx.myself}
                         phx-debounce="300"

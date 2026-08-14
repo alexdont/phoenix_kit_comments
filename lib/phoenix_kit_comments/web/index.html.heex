@@ -44,15 +44,15 @@
   <%!-- Filters: Desktop --%>
   <div class="hidden md:block bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="flex gap-4 items-end">
-      <div class="form-control flex-1">
-        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
+      <div class="fieldset flex-1">
+        <label class="label"><span class="fieldset-legend">{gettext("Search")}</span></label>
         <div class="relative">
           <input
             type="text"
             name="search[query]"
             value={@search}
             placeholder={gettext("Search comment content...")}
-            class="input input-bordered input-sm w-full pr-8"
+            class="input input-sm w-full pr-8"
             phx-debounce="300"
           />
           <button
@@ -67,8 +67,8 @@
         </div>
       </div>
 
-      <div class="form-control w-40">
-        <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
+      <div class="fieldset w-40">
+        <label class="label"><span class="fieldset-legend">{gettext("Resource Type")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[resource_type]">
             <option value="">{gettext("All Types")}</option>
@@ -81,8 +81,8 @@
         </label>
       </div>
 
-      <div class="form-control w-36">
-        <label class="label"><span class="label-text">{gettext("Status")}</span></label>
+      <div class="fieldset w-36">
+        <label class="label"><span class="fieldset-legend">{gettext("Status")}</span></label>
         <label class="select select-sm w-full">
           <select name="filter[status]">
             <option value="">{gettext("All Statuses")}</option>
@@ -111,15 +111,15 @@
   <%!-- Filters: Mobile --%>
   <div class="md:hidden bg-base-200 rounded-lg p-4 mb-6">
     <.form for={%{}} phx-change="filter" class="space-y-3">
-      <div class="form-control">
-        <label class="label"><span class="label-text">{gettext("Search")}</span></label>
+      <div class="fieldset">
+        <label class="label"><span class="fieldset-legend">{gettext("Search")}</span></label>
         <div class="relative">
           <input
             type="text"
             name="search[query]"
             value={@search}
             placeholder={gettext("Search comment content...")}
-            class="input input-bordered input-sm w-full pr-8"
+            class="input input-sm w-full pr-8"
             phx-debounce="300"
           />
           <button
@@ -135,8 +135,8 @@
       </div>
 
       <div class="grid grid-cols-2 gap-3">
-        <div class="form-control">
-          <label class="label"><span class="label-text">{gettext("Resource Type")}</span></label>
+        <div class="fieldset">
+          <label class="label"><span class="fieldset-legend">{gettext("Resource Type")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[resource_type]">
               <option value="">{gettext("All Types")}</option>
@@ -149,8 +149,8 @@
           </label>
         </div>
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">{gettext("Status")}</span></label>
+        <div class="fieldset">
+          <label class="label"><span class="fieldset-legend">{gettext("Status")}</span></label>
           <label class="select select-sm w-full">
             <select name="filter[status]">
               <option value="">{gettext("All Statuses")}</option>
