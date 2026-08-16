@@ -1074,8 +1074,19 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 tabindex="0"
                 class="dropdown-content menu menu-sm bg-base-100 rounded-box z-20 w-40 p-1 shadow"
               >
+                <%!-- The dropdown is focus-driven (daisyUI), and LiveView's --%>
+                <%!-- patch doesn't move focus — so after Edit opens the form  --%>
+                <%!-- or Delete removes the card, the menu would just stay     --%>
+                <%!-- open. Blurring on click closes it the moment an action   --%>
+                <%!-- is chosen (before the data-confirm dialog, which is      --%>
+                <%!-- fine either way the user answers).                       --%>
                 <li :if={can_edit_comment?(@current_user, @comment)}>
-                  <button phx-click="edit_comment" phx-value-id={@comment.uuid} phx-target={@myself}>
+                  <button
+                    phx-click="edit_comment"
+                    phx-value-id={@comment.uuid}
+                    phx-target={@myself}
+                    onclick="document.activeElement && document.activeElement.blur()"
+                  >
                     <.icon name="hero-pencil-square" class="w-4 h-4" /> {gettext("Edit")}
                   </button>
                 </li>
@@ -1086,6 +1097,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                     phx-target={@myself}
                     class="text-error"
                     data-confirm={gettext("Are you sure you want to delete this comment?")}
+                    onclick="document.activeElement && document.activeElement.blur()"
                   >
                     <.icon name="hero-trash" class="w-4 h-4" /> {gettext("Delete")}
                   </button>
