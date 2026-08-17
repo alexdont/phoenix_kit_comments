@@ -1329,7 +1329,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
         if(@comment.depth > 0, do: "ml-2 sm:ml-4 border-l-2 border-base-300", else: "")
       ]}
     >
-      <div class="bg-base-200 rounded-lg p-3 sm:p-4">
+      <div class="group/comment bg-base-200 rounded-lg p-3 sm:p-4">
         <%= if @comment.status == "deleted" do %>
           <div class="text-sm text-base-content/50 italic">{gettext("[removed]")}</div>
         <% else %>
@@ -1346,6 +1346,56 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
               {gettext("Unknown")}
             <% end %>
           </span>
+          <%!-- "…" actions menu — Edit / Delete live here, top right,     --%>
+          <%!-- revealed on hover (focus-within keeps an OPEN menu and     --%>
+          <%!-- keyboard users visible) so a card at rest is just          --%>
+          <%!-- author / body / reactions.                                  --%>
+          <%= if can_edit_comment?(@current_user, @comment) or
+                can_delete_comment?(@current_user, @comment) do %>
+            <div class="dropdown dropdown-end ml-auto shrink-0 opacity-0 group-hover/comment:opacity-100 focus-within:opacity-100 transition-opacity">
+              <div
+                tabindex="0"
+                role="button"
+                class="btn btn-ghost btn-xs"
+                aria-label={gettext("Comment actions")}
+              >
+                <.icon name="hero-ellipsis-horizontal" class="w-4 h-4" />
+              </div>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu menu-sm bg-base-100 rounded-box z-20 w-40 p-1 shadow"
+              >
+                <%!-- The dropdown is focus-driven (daisyUI), and LiveView's --%>
+                <%!-- patch doesn't move focus — so after Edit opens the form  --%>
+                <%!-- or Delete removes the card, the menu would just stay     --%>
+                <%!-- open. Blurring on click closes it the moment an action   --%>
+                <%!-- is chosen (before the data-confirm dialog, which is      --%>
+                <%!-- fine either way the user answers).                       --%>
+                <li :if={can_edit_comment?(@current_user, @comment)}>
+                  <button
+                    phx-click="edit_comment"
+                    phx-value-id={@comment.uuid}
+                    phx-target={@myself}
+                    onclick="document.activeElement && document.activeElement.blur()"
+                  >
+                    <.icon name="hero-pencil-square" class="w-4 h-4" /> {gettext("Edit")}
+                  </button>
+                </li>
+                <li :if={can_delete_comment?(@current_user, @comment)}>
+                  <button
+                    phx-click="delete_comment"
+                    phx-value-id={@comment.uuid}
+                    phx-target={@myself}
+                    class="text-error"
+                    data-confirm={gettext("Are you sure you want to delete this comment?")}
+                    onclick="document.activeElement && document.activeElement.blur()"
+                  >
+                    <.icon name="hero-trash" class="w-4 h-4" /> {gettext("Delete")}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          <% end %>
         </div>
 
         <%!-- Decoration label (when this comment matches an entry in   --%>
@@ -1552,7 +1602,20 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           {Calendar.strftime(@comment.inserted_at, "%b %d, %Y %I:%M %p")}
         </div>
 
+        <%!-- Bottom-right action row: Reply first (hover-revealed —     --%>
+        <%!-- focus-visible keeps keyboard users covered), reactions     --%>
+        <%!-- always visible so counts read at rest without the row      --%>
+        <%!-- feeling crowded.                                            --%>
         <div class="flex flex-wrap items-center justify-end gap-1.5 mt-2">
+          <button
+            phx-click="reply_to"
+            phx-value-id={@comment.uuid}
+            phx-target={@myself}
+            class="btn btn-ghost btn-xs opacity-0 group-hover/comment:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
+          </button>
+
           <%= if @show_likes do %>
             <button
               type="button"
@@ -1586,39 +1649,6 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             >
               <.icon name="hero-hand-thumb-down" class="w-4 h-4" />
               <span>{@comment.dislike_count || 0}</span>
-            </button>
-          <% end %>
-
-          <button
-            phx-click="reply_to"
-            phx-value-id={@comment.uuid}
-            phx-target={@myself}
-            class="btn btn-ghost btn-xs"
-          >
-            <.icon name="hero-arrow-uturn-left" class="w-4 h-4" /> {gettext("Reply")}
-          </button>
-
-          <%= if can_edit_comment?(@current_user, @comment) do %>
-            <button
-              phx-click="edit_comment"
-              phx-value-id={@comment.uuid}
-              phx-target={@myself}
-              class="btn btn-ghost btn-xs"
-              aria-label={gettext("Edit comment")}
-            >
-              <.icon name="hero-pencil-square" class="w-4 h-4" />
-            </button>
-          <% end %>
-
-          <%= if can_delete_comment?(@current_user, @comment) do %>
-            <button
-              phx-click="delete_comment"
-              phx-value-id={@comment.uuid}
-              phx-target={@myself}
-              class="btn btn-ghost btn-xs text-error"
-              data-confirm={gettext("Are you sure you want to delete this comment?")}
-            >
-              <.icon name="hero-trash" class="w-4 h-4" />
             </button>
           <% end %>
         </div>

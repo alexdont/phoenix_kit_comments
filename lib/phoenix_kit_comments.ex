@@ -412,6 +412,11 @@ defmodule PhoenixKitComments do
   - `resource_uuid` - UUID of the resource
   - `user_uuid` - UUID of commenter
   - `attrs` - Comment attributes (content, parent_uuid, metadata, etc.).
+    May include `:inserted_at` (a `DateTime`) to backdate the row — for
+    server-created anchor/topic comments that should carry the timestamp of
+    the thing they anchor (e.g. an annotation's creation time) rather than
+    the moment the thread was lazily instantiated. Server-side callers only;
+    never pass user input here.
     May include `:attachment_file_uuids` — a list of
     `PhoenixKit.Modules.Storage.File` UUIDs to attach to the new comment
     in display order. Comment insert + attachments run in one
@@ -490,6 +495,7 @@ defmodule PhoenixKitComments do
   defp insert_comment_with_attachments(attrs, [], attribution) do
     %Comment{}
     |> Comment.changeset(attrs, has_media: false)
+    |> apply_backdate(attrs)
     |> Comment.put_attribution(attribution)
     |> repo().insert()
   end
@@ -499,6 +505,7 @@ defmodule PhoenixKitComments do
       with {:ok, comment} <-
              %Comment{}
              |> Comment.changeset(attrs, has_media: true)
+             |> apply_backdate(attrs)
              |> Comment.put_attribution(attribution)
              |> repo().insert(),
            :ok <- attach_files(comment.uuid, file_uuids) do
@@ -508,6 +515,17 @@ defmodule PhoenixKitComments do
       end
     end)
   end
+
+  # `:inserted_at` is deliberately NOT in the changeset cast — a client can
+  # never drive it through a form payload. Server-side callers opt in with a
+  # real DateTime struct (anything else is ignored), and the explicit change
+  # wins over Ecto's timestamp autogeneration. `updated_at` stays honest: it
+  # records when the row was actually written.
+  defp apply_backdate(changeset, %{inserted_at: %DateTime{} = dt}) do
+    Ecto.Changeset.put_change(changeset, :inserted_at, DateTime.truncate(dt, :second))
+  end
+
+  defp apply_backdate(changeset, _attrs), do: changeset
 
   defp attach_files(comment_uuid, file_uuids) do
     file_uuids
