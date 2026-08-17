@@ -2,6 +2,33 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.1 - 2026-08-17
+
+Comment backdating for server-created anchor comments, and a comment-card UI
+rework (#36).
+
+### Added
+
+- **`create_comment/4` accepts `:inserted_at`** — a server-created anchor/topic
+  comment (e.g. the thread a shape's discussion hangs under) can now carry the
+  timestamp of the thing it anchors instead of the moment the thread was
+  lazily instantiated by the first reply. Deliberately not part of the
+  changeset `cast`, so no client form payload can drive it: only a real
+  `DateTime` struct triggers the override, anything else (including a
+  client-shaped JSON string) is silently ignored, and `updated_at` still
+  records when the row was actually written. Added integration coverage —
+  the PR that introduced this shipped with none.
+
+### Changed
+
+- **Comment card actions reworked.** A card at rest now shows author / body /
+  date / reactions only. Edit and Delete move into a "…" dropdown at the top
+  right, revealed on hover (`focus-within` keeps it visible for keyboard
+  users). Reply moves to the bottom-right action row, hover-revealed ahead of
+  the always-visible like/dislike buttons. The dropdown blurs itself on
+  Edit/Delete click so a LiveView patch (which never moves focus) can't leave
+  the menu hanging open over an edited or deleted card.
+
 ## 0.4.0 - 2026-08-11
 
 Metadata-keyed reads and writes, a declared resource-handler contract, and the
