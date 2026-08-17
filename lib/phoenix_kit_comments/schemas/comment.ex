@@ -202,6 +202,14 @@ defmodule PhoenixKitComments.Comment do
   end
 
   defp do_validate_content_or_media(changeset, opts) do
+    if opts[:allow_empty] do
+      changeset
+    else
+      do_validate_content_or_media!(changeset, opts)
+    end
+  end
+
+  defp do_validate_content_or_media!(changeset, opts) do
     content = changeset |> get_field(:content) |> to_string() |> String.trim()
     metadata = get_field(changeset, :metadata) || %{}
 

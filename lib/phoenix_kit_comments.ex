@@ -494,7 +494,10 @@ defmodule PhoenixKitComments do
 
   defp insert_comment_with_attachments(attrs, [], attribution) do
     %Comment{}
-    |> Comment.changeset(attrs, has_media: false)
+    |> Comment.changeset(attrs,
+      has_media: false,
+      allow_empty: attrs[:allow_empty_content] == true
+    )
     |> apply_backdate(attrs)
     |> Comment.put_attribution(attribution)
     |> repo().insert()
@@ -563,6 +566,13 @@ defmodule PhoenixKitComments do
 
   defp validate_has_body(attrs, file_count) do
     cond do
+      # Server-side escape hatch (paired with `:inserted_at` in spirit —
+      # attrs are server-built, never a client form payload): an
+      # anchor/topic comment whose visible text lives elsewhere (e.g. an
+      # annotation's own label rendered as the thread's decoration) is
+      # legitimately bodiless — duplicating the label into the body just
+      # made every thread open by repeating itself.
+      attrs[:allow_empty_content] == true -> :ok
       has_content?(attrs) -> :ok
       has_giphy?(attrs) -> :ok
       file_count > 0 -> :ok
