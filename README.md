@@ -22,7 +22,7 @@ Add `phoenix_kit_comments` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_kit_comments, "~> 0.1"}
+    {:phoenix_kit_comments, "~> 0.3"}
   ]
 end
 ```
@@ -145,8 +145,8 @@ When `comments_moderation` is enabled:
 ### Permissions
 
 The module declares permissions via `permission_metadata/0`:
-- `:admin_comments` — Access to moderation dashboard
-- `:admin_settings_comments` — Access to settings page
+- `"comments"` — Access to moderation dashboard
+- `"comments"` — Access to settings page
 
 Use `Scope.has_module_access?/2` to check permissions in your application.
 
@@ -164,7 +164,52 @@ module.exports = {
 }
 ```
 
-### JavaScript wiring
+### Embedding the composer (required for rich text)
+
+The comment composer's rich-text editor lives in a separate LiveComponent, and
+its `{:leaf_changed, _}` messages arrive at the HOST LiveView. Without
+forwarding them the composer looks fine and "Post comment" silently posts
+nothing.
+
+```elixir
+defmodule MyAppWeb.OrderLive do
+  use MyAppWeb, :live_view
+  use PhoenixKitComments.Embed        # attaches the forwarding hook
+end
+```
+
+`Embed` uses a lifecycle hook rather than injecting a `handle_info/2` clause,
+so it composes with a host that already has its own.
+
+⚠️ **If you write your own `handle_info/2`, give it a catch-all.** The
+component also sends `{:comments_updated, _}` to the host on create and
+delete. LiveView only tolerates unmatched messages when a view exports NO
+`handle_info/2` — the moment you define one clause, an unmatched message
+raises `FunctionClauseError` and kills the LiveView.
+
+```elixir
+def handle_info({:comments_updated, _payload}, socket), do: {:noreply, socket}
+def handle_info(_msg, socket), do: {:noreply, socket}
+```
+
+## Resource handler callbacks
+
+Implement `PhoenixKitComments.ResourceHandler` to hook into comments on your
+records. Every callback is optional:
+
+| Callback | Fires when |
+|---|---|
+| `resolve_comment_resources/1` | the admin list needs titles + links for your records |
+| `on_comment_created/3` | a comment lands on one of your records |
+| `on_comment_deleted/3` | a comment is soft-deleted |
+| `on_comment_liked/3` · `on_comment_unliked/3` | reaction added / removed |
+| `on_comment_disliked/3` · `on_comment_undisliked/3` | reaction added / removed |
+
+`resolve_comment_resources/1` returns `%{uuid => %{title:, path:}}` and may add
+`:full_title` and `:thumb_url`. **`path` is RAW** — the renderer applies the
+PhoenixKit url prefix once, so a pre-prefixed path is doubled.
+
+## JavaScript wiring
 
 The comment composer's optional features rely on JS hooks that **the host
 application must register** in its `LiveSocket`. If a hook isn't registered, the
@@ -262,7 +307,7 @@ mix docs           # Generate documentation
   `rich_text={false}` to the component to use the plain-textarea fallback.
 
 ### Permission denied errors
-- Verify the user has the `:admin_comments` permission
+- Verify the user has the `"comments"` permission
 - Check that `Scope.has_module_access?/2` returns `true`
 
 ## License

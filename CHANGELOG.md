@@ -2,6 +2,205 @@
 
 All notable changes to PhoenixKitComments will be documented in this file.
 
+## 0.4.0 - 2026-08-11
+
+Metadata-keyed reads and writes, a declared resource-handler contract, and the
+translated sidebar labels.
+
+### Added
+
+- **Metadata-keyed reads** (#34). `list_comments/3` takes a `:metadata` map of
+  keys that must match, and `:any` in place of a resource uuid to list across a
+  whole resource type. `resource_uuid` is a UUID column and plenty of hosts key
+  their comments on something that isn't one — a `(source, slug, chapter)`
+  triple — so they mint a throwaway uuid and put the real key in `metadata`. The
+  listing they actually want was not expressible, and they dropped to schemaless
+  SQL against this package's own table to get it.
+
+- **`update_metadata/2` and `merge_metadata/3`** (#34). Single atomic
+  `metadata || patch` writes, so they cannot lose a concurrent writer's keys the
+  way read-modify-write does. `merge_metadata/3` is the rename case — a host
+  renames a slug and every comment carrying the old one has to follow. An empty
+  match is refused rather than treated as "everything".
+
+- **`count_replies/2`** (#34) — `parent_uuid => count` for a batch of parents in
+  one grouped query, with a `0` entry for every uuid asked about, so a thread
+  list renders uniformly without an N+1.
+
+- **`PhoenixKitComments.ResourceHandler.callbacks/0` and `event_callbacks/0`**
+  (#35), and the rationale for adopting the behaviour at all: dispatch is by
+  `function_exported?/3`, so a misnamed or wrong-arity callback is
+  indistinguishable from one you chose not to write — nothing fires and there is
+  no error to find it by.
+
+### Changed
+
+- **Sidebar tab labels are translated** (#33). The admin and settings tabs
+  declare `gettext_backend` and `gettext_domain`, which they need in order to
+  resolve at all.
+
+### Fixed
+
+- **Estonian and Russian entries that carried another string's translation**
+  (#33), and entries whose `fuzzy` flag meant Gettext ignored them at runtime
+  and showed the English msgid instead. Two plural forms had also dropped their
+  `%{action}` interpolation, so a bulk-action result read "5 comments" instead
+  of "5 comments deleted".
+
+- **`count_replies/2` reported zeros silently on a failed query.** "0 replies"
+  on a thread that has replies is a plausible-looking wrong answer rather than an
+  obviously broken one, and nothing anywhere distinguished it from a quiet
+  thread. It now logs before degrading.
+
+## 0.3.0 - 2026-08-10
+
+### Changed
+
+- **⚠️ Requires `phoenix_kit ~> 2.0`.** The core pin moved to `~> 2.0`, so this
+  release no longer resolves against core 1.7.
+
+  Core 2.0.0 squashes the migration chain into a single `V135` baseline and makes
+  V135 the chain's floor: `mix ecto.migrate` now *refuses* on a database below it
+  rather than migrating. Check `mix phoenix_kit.status` **before** upgrading. A
+  host below V135 must install `phoenix_kit 1.7.236` — the migration bridge, the
+  last release carrying the full pre-squash chain — migrate until the reported
+  version is at least V135, and only then move to 2.0.
+
+  This package does not call migration internals, so the change is the pin
+  itself.
+
+### Security
+
+- **Stored XSS in every comment body (PR #31).** Bodies render with MDEx
+  `unsafe: true`, which disables MDEx's escaping and makes whatever runs next
+  the security boundary — that was six regexes over the rendered string, a
+  blocklist over HTML. Two payloads went through untouched: `<script>alert(1)`
+  with no closing tag (the pattern required a matching `</script>`) and
+  `<a href=javascript:alert(1)>` (the pattern required the value to be quoted).
+  Either executed for every reader of a thread **and again in the admin
+  moderation list**, which renders the same component — so an unprivileged
+  commenter ran script in an owner's authenticated session.
+
+  Rendering now uses MDEx's `:sanitize` allow-list (ammonia), which drops
+  unknown tags and every attribute outside the allowed set instead of matching
+  against a pattern. MDEx's default list permits `style` on `div`, enough to
+  lay an overlay over the moderation UI's own buttons, so that is stripped too.
+  Ten payloads are pinned by tests.
+- **`save_decoration` had no authorization check at all** — a logged-out
+  visitor could rename any host record backed by a visible comment, and the
+  `send_update` the host received was byte-identical to a legitimate one.
+- **Admin reads were unguarded while every write was checked.** An admin
+  *without* the `comments` permission could read every comment on the platform,
+  commenter emails, and the Giphy API key as a form value.
+- **`@enabled` gated only the template**, so writes landed on a disabled thread.
+- **`save_edit` forwarded the decoration before checking permission**, so a
+  refused request still committed half an edit.
+
+### Fixed
+
+- **Reaction counters were inflatable.** Dedup was a SELECT-then-INSERT with no
+  unique index behind it — the index was dropped during the uuid-FK migration
+  and never recreated, which also left the schemas' `unique_constraint` as dead
+  code. Reactions now serialise on the parent comment row.
+- **The counter drifted permanently once duplicates existed** — `delete_all`
+  removes N rows while the decrement was hardcoded to 1.
+- **A repeat click committed a write and reported nothing** — both paths remove
+  the opposing reaction before deciding, and `after_reaction/3` skipped exactly
+  those two atoms.
+
+### Changed
+
+- **⚠️ Breaking (small): `render_markdown/2` is now `render_markdown/1`,** and
+  the `sanitize` attr is gone from `<.comment_markdown>`. There is no caller for
+  whom skipping sanitisation of a user-authored body would be correct, and an
+  opt-out is one `sanitize={false}` away from stored XSS on every reader. No
+  sibling module in the umbrella calls this function.
+
+## 0.2.15 — 2026-07-27
+
+### Added
+
+- **Comment editors open in the admin-configured default mode (PR #30).** Both
+  the composer and the inline edit form pass the site-wide editor mode (set
+  under Settings → Content Editor in core) to Leaf, instead of always opening in
+  Leaf's `:hybrid` default.
+- **Named-schema (`--prefix`) support at runtime (PR #29).** Every table-backed
+  schema (`Comment`, `CommentLike`, `CommentDislike`, `CommentMedia`) compiles in
+  `PhoenixKit.SchemaPrefix`, so on a prefixed install this module's queries
+  target the named schema directly rather than relying on the DB role's
+  `search_path`. No behaviour change for unprefixed installs. A conformance test
+  scans `lib/` so future table-backed schemas can't silently skip the attribute.
+
+### Changed
+
+- **Moderation dashboard bulk-select moved client-side (PR #29).** Per-checkbox
+  `phx-click` round-trips and the `selected_uuids` assign are replaced by core's
+  `BulkSelect` components and the `BulkSelectScope` JS hook — selection lives in
+  the browser and the server only learns the UUIDs when a toolbar button is
+  clicked. Adds a header "select all" checkbox; `bulk_action` splits into
+  `bulk_approve` / `bulk_hide` / `bulk_delete_comments`, all keeping the same
+  authorization gate and the delete confirmation.
+
+### Fixed
+
+- **Comments component no longer crashes on the editor-mode lookup (post-merge
+  review of PR #30).** The merged code called
+  `PhoenixKit.Settings.get_editor_mode/0`, which does not exist in any
+  phoenix_kit release the `~> 1.7.189` pin can resolve (latest is 1.7.213) —
+  raising `UndefinedFunctionError` in `update/2` on **every** render of every
+  comments embed. The lookup is now capability-probed and falls back to Leaf's
+  `:hybrid` default on older cores, and starts honouring the setting
+  automatically once core ships it.
+- **Editor mode is normalized before it reaches Leaf.** Leaf's `:mode` clauses
+  have no catch-all, so a string setting value (the shape settings round-trip
+  as) or an unrecognised mode would raise `FunctionClauseError` inside Leaf.
+  Values are now coerced to one of `:visual` / `:hybrid` / `:markdown` / `:html`,
+  with test coverage pinning the contract.
+- **Editor mode is read once per component lifetime** instead of on every
+  `update/2` — Leaf only honours `:mode` on its first render, so the repeated
+  settings lookup on each parent re-render / `send_update` was pure cost.
+
+### Dependencies
+
+- Bump the `phoenix_kit` floor to `~> 1.7.189` (provides `PhoenixKit.SchemaPrefix`).
+- Drop the orphaned `:beamlab_ex_aws_sqs` entry from `mix.lock`, which made
+  `mix deps.unlock --check-unused` (and therefore `mix precommit`) fail. No
+  change to the resolved dependency set.
+
+## 0.2.14 — 2026-07-10
+
+### Changed
+
+- **Settings page modernized (`Web.Settings`).** The five stacked cards collapse
+  into a single card with lightweight in-card section headers (new
+  `settings_section_header/1` component — a local copy of core's
+  `FormSection.section_header/1` so the package renders identically without
+  waiting on a core release). Toggles and inputs move to daisyUI label patterns,
+  and the **Reset to Defaults** button gains a `data-confirm` prompt since it
+  wipes moderation, limits, Giphy, and attachment settings.
+- **Resource resolution delegated to core `PhoenixKit.ResourceLinks`.**
+  `PhoenixKitComments` drops its own ~170-line handler registry and
+  path-template engine and `defdelegate`s `get_resource_path_templates/0`,
+  `update_resource_path_templates/1`, and `resolve_resource_context/1` (plus the
+  notification-callback dispatch) to core. The comments moderation admin and the
+  Activity feed now resolve deep-links through one shared resolver, off one set
+  of handlers and the shared `comment_resource_paths` templates. Behaviour is
+  preserved — same return shape, same default handlers (`post`/`file`/`user`),
+  same template fallback — with `integration` and module-declared handlers added
+  for free.
+
+### Added
+
+- **Full gettext coverage for the settings page.** Every user-facing string on
+  `Web.Settings` (template + flash messages) is now wrapped in
+  `gettext`/`ngettext` against the module's own `PhoenixKitComments.Gettext`
+  backend, and the `default.pot` + `en`/`et`/`ru` catalogs are extended and
+  fully translated to Russian and Estonian.
+
+### Dependencies
+
+- Bump `phoenix_kit` to `1.7.181` (provides `PhoenixKit.ResourceLinks`).
+
 ## 0.2.13 — 2026-06-25
 
 ### Added

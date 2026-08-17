@@ -20,13 +20,13 @@
         },
         async start() {
           if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            this.pushError("Microphone access is not supported by this browser.");
+            this.pushError("unsupported");
             return;
           }
           try {
             this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           } catch (err) {
-            this.pushError("Microphone permission denied.");
+            this.pushError("denied");
             return;
           }
           const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -36,7 +36,7 @@
             this.recorder = new MediaRecorder(this.stream, { mimeType });
           } catch (err) {
             this.cleanup();
-            this.pushError("Could not start recording: " + err.message);
+            this.pushError("start_failed");
             return;
           }
           this.chunks = [];
@@ -62,7 +62,7 @@
           try {
             this.upload(uploadName, [file]);
           } catch (err) {
-            this.pushError("Failed to attach recording: " + err.message);
+            this.pushError("attach_failed");
           }
           this.recording = false;
           this.cleanup();
@@ -76,8 +76,12 @@
           this.recorder = null;
           this.chunks = [];
         },
-        pushError(msg) {
-          this.pushEventTo(this.el, "audio_recording_error", { message: msg });
+        // A reason CODE, never prose. The server maps it to a translated
+        // string: the old version pushed English sentences that landed in
+        // the flash untranslated in every locale, and let any client paint
+        // arbitrary text in the app's own error chrome.
+        pushError(reason) {
+          this.pushEventTo(this.el, "audio_recording_error", { reason: reason });
           this.cleanup();
           this.recording = false;
         }

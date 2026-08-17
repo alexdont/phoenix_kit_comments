@@ -29,13 +29,27 @@ defmodule PhoenixKitComments.ResourceHandlerTest do
       assert optional == ResourceHandler.callbacks()
     end
 
-    test "every callback takes three arguments" do
+    test "every comment-event callback takes three arguments" do
       # The dispatcher asks `function_exported?(mod, callback, 3)` and applies
-      # three arguments. A callback declared at any other arity would be
+      # three arguments. An event callback declared at any other arity would be
       # declared and never called.
-      for {name, arity} <- ResourceHandler.callbacks() do
+      #
+      # `resolve_comment_resources/1` is deliberately excluded rather than the
+      # contract being assumed uniform: it is a batch lookup the renderer calls
+      # directly, not something `notify_resource_handler/4` fires, and it
+      # answers a different question at a different arity.
+      for {name, arity} <- ResourceHandler.event_callbacks() do
         assert arity == 3, "#{name}/#{arity} is declared but the dispatcher only calls arity 3"
       end
+    end
+
+    test "the resource lookup is still part of the contract" do
+      # It predates the event callbacks and is the one the renderer depends on
+      # for titles and deep links. A rewrite of this contract that declares
+      # only the six `on_comment_*` events silently drops it: hosts that
+      # implement it get "@impl true but the behaviour does not specify such
+      # callback", and the RAW-path rule documented against it loses its home.
+      assert {:resolve_comment_resources, 1} in ResourceHandler.callbacks()
     end
   end
 
@@ -53,7 +67,7 @@ defmodule PhoenixKitComments.ResourceHandlerTest do
         |> Enum.uniq()
         |> Enum.sort()
 
-      declared = ResourceHandler.callbacks() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
+      declared = ResourceHandler.event_callbacks() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
 
       assert dispatched == declared,
              """

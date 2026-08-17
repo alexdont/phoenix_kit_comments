@@ -1,7 +1,6 @@
 defmodule PhoenixKitComments.ResourceHandler do
   @moduledoc """
-  The contract a resource handler implements to hear about comments on its
-  own resources.
+  The contract a host module implements to hook into comments.
 
   Register one per `resource_type`:
 
@@ -17,14 +16,16 @@ defmodule PhoenixKitComments.ResourceHandler do
   Dispatch is by `function_exported?/3`, and it always will be: a handler is
   named in host config, may live in another application, and may legitimately
   implement none of these. That is a good property, and it has one bad
-  consequence — a callback this module never finds is indistinguishable from
+  consequence — a callback this package never finds is indistinguishable from
   one you chose not to write. Misname `on_comment_create` (no `d`), take two
   arguments instead of three, and nothing happens: no error, no warning, no
-  notification, and nothing to grep for.
+  notification, and nothing to grep for. The host discovers it when someone
+  reports that notifications stopped.
 
   `@behaviour PhoenixKitComments.ResourceHandler` turns that into a compile
   warning at the point of the mistake. It is not required and changes nothing
-  at runtime; it only makes the failure loud.
+  at runtime; it only makes the failure loud. Handlers registered today keep
+  working untouched.
 
       defmodule MyApp.Posts do
         @behaviour PhoenixKitComments.ResourceHandler
@@ -37,12 +38,18 @@ defmodule PhoenixKitComments.ResourceHandler do
 
   ## What is passed
 
-  All callbacks receive the `resource_type` and `resource_uuid` the comment
-  was filed against, so one handler can serve several types.
+  The event callbacks all receive the `resource_type` and `resource_uuid` the
+  comment was filed against, so one handler can serve several types.
 
   Reaction callbacks take a map rather than the comment alone because the
   comment row carries its *author*, not the person reacting — `:liker_uuid`
   is the only place that appears.
+
+  ## Paths are RAW
+
+  `resolve_comment_resources/1` returns `path` WITHOUT the PhoenixKit url
+  prefix — the renderer applies `Routes.path/1` once. A handler that
+  pre-prefixes gets a doubled prefix.
 
   ## What is NOT decided here
 
@@ -57,10 +64,10 @@ defmodule PhoenixKitComments.ResourceHandler do
 
   alias PhoenixKitComments.Comment
 
-  @typedoc "The resource type the comment was filed against, e.g. `\"post\"`."
+  @typedoc "The host's own type key for a commentable record, e.g. `\"order\"`."
   @type resource_type :: String.t()
 
-  @typedoc "The uuid of the resource being commented on."
+  @typedoc "The record's uuid."
   @type resource_uuid :: Ecto.UUID.t()
 
   @typedoc """
@@ -69,10 +76,21 @@ defmodule PhoenixKitComments.ResourceHandler do
   """
   @type reaction :: %{comment: Comment.t(), liker_uuid: Ecto.UUID.t()}
 
+  @doc """
+  Titles and RAW deep-links for the given uuids.
+
+  Returns `%{uuid => %{title: String.t(), path: String.t()}}`. May also
+  carry `:full_title` (tooltip) and `:thumb_url` (chip thumbnail); a uuid
+  the handler does not recognise is simply absent from the map.
+  """
+  @callback resolve_comment_resources([resource_uuid()]) :: %{
+              optional(resource_uuid()) => map()
+            }
+
   @doc "A comment was created. Check `comment.parent_uuid` to tell a reply apart."
   @callback on_comment_created(resource_type(), resource_uuid(), Comment.t()) :: any()
 
-  @doc "A comment was removed."
+  @doc "A comment was soft-deleted."
   @callback on_comment_deleted(resource_type(), resource_uuid(), Comment.t()) :: any()
 
   @doc "Someone liked a comment. Fires only on an actual change of state."
@@ -87,7 +105,8 @@ defmodule PhoenixKitComments.ResourceHandler do
   @doc "Someone withdrew a dislike."
   @callback on_comment_undisliked(resource_type(), resource_uuid(), reaction()) :: any()
 
-  @optional_callbacks on_comment_created: 3,
+  @optional_callbacks resolve_comment_resources: 1,
+                      on_comment_created: 3,
                       on_comment_deleted: 3,
                       on_comment_liked: 3,
                       on_comment_unliked: 3,
@@ -103,4 +122,17 @@ defmodule PhoenixKitComments.ResourceHandler do
   """
   @spec callbacks() :: [{atom(), arity()}]
   def callbacks, do: __MODULE__.behaviour_info(:callbacks) |> Enum.sort()
+
+  @doc """
+  The comment-event callbacks, i.e. everything except
+  `resolve_comment_resources/1`.
+
+  These are the ones the dispatcher fires by name with three arguments;
+  `resolve_comment_resources/1` is a lookup the renderer calls directly and
+  answers a different question, so checks over "the events" have to exclude
+  it rather than assume the contract is uniform.
+  """
+  @spec event_callbacks() :: [{atom(), arity()}]
+  def event_callbacks,
+    do: Enum.filter(callbacks(), fn {name, _} -> name != :resolve_comment_resources end)
 end

@@ -63,7 +63,7 @@ defmodule PhoenixKitComments do
   ### Moderation
   - `approve_comment/1` - Set status to published
   - `hide_comment/1` - Set status to hidden
-  - `bulk_update_status/2` - Bulk status changes
+  - `bulk_update_status/3` - Bulk status changes
   - `list_all_comments/1` - Cross-resource listing with filters
   - `comment_stats/0` - Aggregate statistics
 
@@ -82,6 +82,7 @@ defmodule PhoenixKitComments do
   alias PhoenixKit.ResourceLinks
   alias PhoenixKit.Settings
   alias PhoenixKit.Utils.UUID, as: UUIDUtils
+  alias PhoenixKitComments.Activity
   alias PhoenixKitComments.Comment
   alias PhoenixKitComments.CommentDislike
   alias PhoenixKitComments.CommentLike
@@ -126,19 +127,28 @@ defmodule PhoenixKitComments do
   end
 
   @doc "Returns the configured maximum comment depth."
+  # `n > 0` and a rescue, matching `get_max_attachments/0`. Without the
+  # guard a stored "0" made `validate_depth/1` (`depth >= max`) reject EVERY
+  # comment with "Reply nesting is too deep", and without the rescue an
+  # unreachable settings store took the whole call down.
   def get_max_depth do
     case Integer.parse(Settings.get_setting("comments_max_depth", "10")) do
-      {n, _} -> n
-      :error -> 10
+      {n, _} when n > 0 -> n
+      _ -> 10
     end
+  rescue
+    _ -> 10
   end
 
   @doc "Returns the configured maximum comment length."
+  # Same shape: a stored "0" here rejected every non-empty comment.
   def get_max_length do
     case Integer.parse(Settings.get_setting("comments_max_length", "10000")) do
-      {n, _} -> n
-      :error -> 10_000
+      {n, _} when n > 0 -> n
+      _ -> 10_000
     end
+  rescue
+    _ -> 10_000
   end
 
   # ============================================================================
@@ -253,31 +263,46 @@ defmodule PhoenixKitComments do
         {:ok, []}
 
       trimmed ->
-        case get_giphy_api_key() do
-          "" ->
-            {:error, :missing_api_key}
+        # The FEATURE gate, not just the key. `giphy_enabled?/0` requires
+        # the toggle AND a key, while this required only the key — so with
+        # the toggle off the picker was hidden and a crafted `giphy_search`
+        # event still spent the host's Giphy quota. The hidden control was
+        # never the control.
+        if giphy_enabled?() do
+          do_search_giphy(trimmed, opts)
+        else
+          {:error, :giphy_disabled}
+        end
+    end
+  end
 
-          api_key ->
-            rating = get_giphy_rating()
-            limit = Keyword.get(opts, :limit, 24)
+  defp do_search_giphy(trimmed, opts) do
+    case get_giphy_api_key() do
+      "" ->
+        {:error, :missing_api_key}
 
-            try do
-              case GiphyApi.search(trimmed,
-                     api_key: api_key,
-                     rating: rating,
-                     limit: limit
-                   ) do
-                {:ok, results} ->
-                  {:ok, results |> Enum.map(&normalize_giphy_gif/1) |> Enum.reject(&is_nil/1)}
+      api_key ->
+        rating = get_giphy_rating()
+        limit = Keyword.get(opts, :limit, 24)
 
-                {:error, _} = err ->
-                  err
-              end
-            rescue
-              e ->
-                Logger.warning("Giphy search failed: #{inspect(e)}")
-                {:error, :giphy_error}
-            end
+        try do
+          case GiphyApi.search(trimmed,
+                 api_key: api_key,
+                 rating: rating,
+                 limit: limit
+               ) do
+            {:ok, results} ->
+              {:ok, results |> Enum.map(&normalize_giphy_gif/1) |> Enum.reject(&is_nil/1)}
+
+            {:error, _} = err ->
+              err
+          end
+        rescue
+          e ->
+            # The key rides in the query string, so `inspect(e)` on a
+            # Req exception can write it to the log in plaintext.
+            Logger.warning("[PhoenixKitComments] Giphy search failed: #{inspect(e.__struct__)}")
+            {:error, :giphy_error}
         end
     end
   end
@@ -335,6 +360,8 @@ defmodule PhoenixKitComments do
       Tab.new!(
         id: :admin_comments,
         label: "Comments",
+        gettext_backend: PhoenixKitComments.Gettext,
+        gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",
         path: "comments",
         priority: 590,
@@ -353,6 +380,8 @@ defmodule PhoenixKitComments do
       Tab.new!(
         id: :admin_settings_comments,
         label: "Comments",
+        gettext_backend: PhoenixKitComments.Gettext,
+        gettext_domain: "default",
         icon: "hero-chat-bubble-left-right",
         path: "comments",
         priority: 924,
@@ -429,15 +458,20 @@ defmodule PhoenixKitComments do
 
   defp do_create_comment(resource_type, resource_uuid, user_uuid, attrs) do
     {file_uuids, attrs} = Map.pop(attrs, :attachment_file_uuids, [])
+    # Popped BEFORE cast, like the file uuids: attribution decides what the
+    # public sees and whether somebody is speaking for an organisation, so
+    # it must arrive as a computed argument rather than as a castable field
+    # a client could set.
+    {attribution, attrs} = Map.pop(attrs, :attribution)
     file_uuids = List.wrap(file_uuids)
     attrs = prepare_create_attrs(resource_type, resource_uuid, user_uuid, attrs)
 
     with :ok <- run_cheap_validators(attrs, length(file_uuids)),
          :ok <- validate_file_uuid_format(file_uuids),
-         {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids) do
+         {:ok, comment} <- insert_comment_with_attachments(attrs, file_uuids, attribution) do
       notify_resource_handler(:on_comment_created, resource_type, resource_uuid, comment)
       broadcast_change(resource_type, resource_uuid, :created)
-      {:ok, comment}
+      Activity.log_comment({:ok, comment}, "comments.comment_created", actor_uuid: user_uuid)
     end
   end
 
@@ -458,19 +492,21 @@ defmodule PhoenixKitComments do
     end
   end
 
-  defp insert_comment_with_attachments(attrs, []) do
+  defp insert_comment_with_attachments(attrs, [], attribution) do
     %Comment{}
     |> Comment.changeset(attrs, has_media: false)
     |> apply_backdate(attrs)
+    |> Comment.put_attribution(attribution)
     |> repo().insert()
   end
 
-  defp insert_comment_with_attachments(attrs, file_uuids) do
+  defp insert_comment_with_attachments(attrs, file_uuids, attribution) do
     repo().transaction(fn ->
       with {:ok, comment} <-
              %Comment{}
              |> Comment.changeset(attrs, has_media: true)
              |> apply_backdate(attrs)
+             |> Comment.put_attribution(attribution)
              |> repo().insert(),
            :ok <- attach_files(comment.uuid, file_uuids) do
         repo().preload(comment, media: :file)
@@ -554,7 +590,7 @@ defmodule PhoenixKitComments do
   - `comment` - Comment to update
   - `attrs` - Attributes to update (content, status)
   """
-  def update_comment(%Comment{} = comment, attrs) do
+  def update_comment(%Comment{} = comment, attrs, opts \\ []) do
     # Preload :media so the changeset can infer "has media" when content
     # is being changed. Status-only updates skip the content-or-media
     # check entirely (see `Comment.changeset/3`), so this is a no-op on
@@ -565,6 +601,7 @@ defmodule PhoenixKitComments do
     |> ensure_media_loaded()
     |> Comment.changeset(attrs)
     |> repo().update()
+    |> Activity.log_comment("comments.comment_updated", opts)
   end
 
   defp ensure_media_loaded(%Comment{media: %Ecto.Association.NotLoaded{}} = comment) do
@@ -578,8 +615,10 @@ defmodule PhoenixKitComments do
 
   Invokes resource handler callback if configured.
   """
-  def delete_comment(%Comment{} = comment) do
-    case update_comment(comment, %{status: "deleted"}) do
+  def delete_comment(%Comment{} = comment, opts \\ []) do
+    # `update_comment/3` logs its own generic edit; the delete is the
+    # meaningful line, so the inner call is left unlogged.
+    case update_comment(comment, %{status: "deleted"}, log: false) do
       {:ok, deleted} ->
         notify_resource_handler(
           :on_comment_deleted,
@@ -590,7 +629,7 @@ defmodule PhoenixKitComments do
 
         broadcast_change(comment.resource_type, comment.resource_uuid, :deleted)
 
-        {:ok, deleted}
+        Activity.log_comment({:ok, deleted}, "comments.comment_deleted", opts)
 
       error ->
         error
@@ -602,12 +641,25 @@ defmodule PhoenixKitComments do
 
   Returns `nil` if not found.
   """
-  def get_comment(id, opts \\ []) do
-    preloads = Keyword.get(opts, :preload, [])
+  def get_comment(id, opts \\ [])
 
-    case repo().get(Comment, id) do
-      nil -> nil
-      comment -> repo().preload(comment, preloads)
+  # Callers pass raw `phx-value-uuid` straight in. `Repo.get/2` on a
+  # malformed uuid raises Ecto.Query.CastError, which kills the LiveView —
+  # and `save_edit` reads `socket.assigns.editing_uuid`, which is nil when
+  # no edit is open, so `Repo.get(Comment, nil)` raised ArgumentError. User
+  # uuids and file uuids on these same paths were already validated; comment
+  # uuids were the gap. "Not a uuid" and "no such comment" are the same
+  # answer to a caller.
+  def get_comment(id, _opts) when not is_binary(id), do: nil
+
+  def get_comment(id, opts) do
+    if UUIDUtils.valid?(id) do
+      preloads = Keyword.get(opts, :preload, [])
+
+      case repo().get(Comment, id) do
+        nil -> nil
+        comment -> repo().preload(comment, preloads)
+      end
     end
   end
 
@@ -657,23 +709,85 @@ defmodule PhoenixKitComments do
   - `:preload` - Associations to preload
   - `:status` - Filter by status
   - `:include_deleted` - Include `status == "deleted"` rows (default: false)
+  - `:metadata` - Map of `metadata` keys that must match, compared as text
+
+  ## Listing across a whole resource type
+
+  Pass `:any` as the resource uuid to drop the per-resource condition. This
+  exists because `resource_uuid` is a UUID column, and plenty of hosts key
+  their comments on something that isn't one — a `(source, slug, chapter)`
+  triple, say. Those hosts mint a throwaway uuid per comment and put the real
+  key in `metadata`, at which point every listing they actually want is "this
+  type, where metadata says X" — a query the API could not express, so they
+  dropped to schemaless SQL against the table and inherited its sharp edges
+  (uuid columns load as 16-byte binaries there, which fails string comparison
+  silently).
+
+      # every comment of this type for one manga, whatever chapter
+      list_comments("chapter", :any, metadata: %{"source" => "mangadex", "slug" => slug})
+
+  Metadata is compared with `->>`, i.e. as text, so match against the string
+  form of whatever was stored.
   """
   def list_comments(resource_type, resource_uuid, opts \\ []) do
     preloads = Keyword.get(opts, :preload, [])
     status = Keyword.get(opts, :status)
     include_deleted = Keyword.get(opts, :include_deleted, false)
 
-    query =
-      from(c in Comment,
-        where: c.resource_type == ^resource_type and c.resource_uuid == ^resource_uuid,
-        order_by: [asc: c.inserted_at]
-      )
-
-    query = apply_status_filter(query, status, include_deleted)
-
-    query
+    from(c in Comment, where: c.resource_type == ^resource_type, order_by: [asc: c.inserted_at])
+    |> apply_resource_filter(resource_uuid)
+    |> apply_metadata_filter(Keyword.get(opts, :metadata))
+    |> apply_status_filter(status, include_deleted)
     |> repo().all()
     |> repo().preload(preloads)
+  end
+
+  @doc """
+  Counts replies for a batch of parent comments, as a `parent_uuid => count`
+  map.
+
+  Mirrors the list form of `count_comments/3`: one grouped query, and a `0`
+  entry for every uuid asked about, so a thread list renders uniformly without
+  an N+1 or a hand-rolled correlated subquery.
+
+      iex> count_replies([a, b, c])
+      %{a => 2, b => 0, c => 5}
+
+  Deleted replies are excluded unless `:status` is set explicitly or
+  `include_deleted: true` is passed — the same rule the other reads follow.
+  """
+  @spec count_replies([Ecto.UUID.t()], keyword()) ::
+          %{optional(Ecto.UUID.t()) => non_neg_integer()}
+  def count_replies(parent_uuids, opts \\ []) when is_list(parent_uuids) do
+    uuids = Enum.uniq(parent_uuids)
+
+    counts =
+      from(c in Comment,
+        where: c.parent_uuid in ^uuids,
+        group_by: c.parent_uuid,
+        select: {c.parent_uuid, count(c.uuid)}
+      )
+      |> apply_status_filter(
+        Keyword.get(opts, :status),
+        Keyword.get(opts, :include_deleted, false)
+      )
+      |> repo().all()
+      |> Map.new()
+
+    Map.new(uuids, fn uuid -> {uuid, Map.get(counts, uuid, 0)} end)
+  rescue
+    error ->
+      # Degrading to zeros keeps a thread list rendering, but "0 replies" on a
+      # thread that has replies is a plausible-looking wrong answer, not an
+      # obviously broken one — so it has to leave a trace. Without the log
+      # there is nothing anywhere to distinguish a quiet thread from a failed
+      # query.
+      Logger.warning(
+        "PhoenixKitComments.count_replies/2 failed, reporting 0 for " <>
+          "#{length(Enum.uniq(parent_uuids))} parents: #{Exception.message(error)}"
+      )
+
+      Map.new(Enum.uniq(parent_uuids), &{&1, 0})
   end
 
   @doc """
@@ -740,18 +854,139 @@ defmodule PhoenixKitComments do
   defp apply_status_filter(query, nil, true), do: query
   defp apply_status_filter(query, status, _), do: where(query, [c], c.status == ^status)
 
+  # `:any` drops the condition entirely — see `list_comments/3` for why a
+  # resource-type-wide read is a first-class thing to want.
+  defp apply_resource_filter(query, :any), do: query
+  defp apply_resource_filter(query, uuid), do: where(query, [c], c.resource_uuid == ^uuid)
+
+  defp apply_metadata_filter(query, nil), do: query
+  defp apply_metadata_filter(query, map) when map_size(map) == 0, do: query
+
+  defp apply_metadata_filter(query, %{} = match) do
+    Enum.reduce(match, query, fn {key, value}, acc ->
+      # `->>` so the comparison is text-to-text. The alternative, containment
+      # (`@>`), would need the value typed exactly as stored and would make
+      # `"1"` and `1` different questions — a distinction no caller filtering
+      # on a slug wants to think about.
+      where(acc, [c], fragment("?->>? = ?", c.metadata, ^to_string(key), ^to_string(value)))
+    end)
+  end
+
+  @doc """
+  Merges `patch` into a comment's `metadata`, leaving every other key alone.
+
+  The write is a single atomic `metadata || patch` statement, so it cannot
+  lose a concurrent writer's keys the way read-modify-write does — and hosts
+  do not have to hand-write jsonb to retarget a comment.
+
+      iex> update_metadata(comment_uuid, %{"slug" => "new-slug"})
+      {:ok, %Comment{}}
+
+  Returns `{:error, :not_found}` if the row is gone.
+  """
+  @spec update_metadata(Ecto.UUID.t() | Comment.t(), map()) ::
+          {:ok, Comment.t()} | {:error, :not_found}
+  def update_metadata(%Comment{uuid: uuid}, patch), do: update_metadata(uuid, patch)
+
+  def update_metadata(uuid, %{} = patch) when is_binary(uuid) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    query =
+      from(c in Comment,
+        where: c.uuid == ^uuid,
+        update: [
+          set: [
+            # COALESCE first: the column is nullable, and `NULL || jsonb` is
+            # NULL — without it a null-metadata row would swallow the patch and
+            # still report success.
+            metadata: fragment("COALESCE(?, '{}'::jsonb) || ?", c.metadata, type(^patch, :map)),
+            updated_at: ^now
+          ]
+        ],
+        select: c
+      )
+
+    case repo().update_all(query, []) do
+      {1, [comment]} -> {:ok, comment}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Merges `patch` into the metadata of every comment of `resource_type` whose
+  metadata matches `match`. Returns the number of rows updated.
+
+  This is the rename case: a host keyed on a slug renames it, and every
+  comment carrying the old one has to follow. Doing that by hand means a raw
+  `metadata || jsonb_build_object(...)` UPDATE in the host, which is how a
+  schema this package owns ends up written to from outside it.
+
+      iex> merge_metadata("chapter", %{"slug" => "old"}, %{"slug" => "new"})
+      42
+
+  Matching is the same text comparison `list_comments/3` uses. An empty
+  `match` is refused rather than treated as "everything" — a typo that
+  rewrites every comment of a type is not a thing this should make easy.
+  """
+  @spec merge_metadata(String.t(), map(), map()) :: non_neg_integer()
+  def merge_metadata(_resource_type, match, _patch) when map_size(match) == 0 do
+    raise ArgumentError,
+          "merge_metadata/3 requires a non-empty match; refusing to rewrite every comment of a type"
+  end
+
+  def merge_metadata(resource_type, %{} = match, %{} = patch) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    query =
+      from(c in Comment,
+        where: c.resource_type == ^resource_type,
+        update: [
+          set: [
+            metadata: fragment("COALESCE(?, '{}'::jsonb) || ?", c.metadata, type(^patch, :map)),
+            updated_at: ^now
+          ]
+        ]
+      )
+      |> apply_metadata_filter(match)
+
+    {count, _} = repo().update_all(query, [])
+    count
+  end
+
   # ============================================================================
   # Moderation
   # ============================================================================
 
   @doc "Sets a comment's status to published."
-  def approve_comment(%Comment{} = comment) do
-    update_comment(comment, %{status: "published"})
+  def approve_comment(%Comment{} = comment, opts \\ []) do
+    comment
+    |> update_comment(%{status: "published"}, opts)
+    |> Activity.log_comment("comments.comment_approved", opts)
+  end
+
+  @doc """
+  Restores a soft-deleted comment.
+
+  Publishes only when the site does not moderate; otherwise it goes back to
+  `pending`, because "undo a delete" should not also mean "approve".
+  """
+  @spec restore_comment(Comment.t(), keyword()) :: {:ok, Comment.t()} | {:error, term()}
+  def restore_comment(%Comment{} = comment, opts \\ []) do
+    status =
+      if Settings.get_boolean_setting("comments_moderation", false),
+        do: "pending",
+        else: "published"
+
+    comment
+    |> update_comment(%{status: status}, Keyword.put(opts, :log, false))
+    |> Activity.log_comment("comments.comment_restored", opts)
   end
 
   @doc "Sets a comment's status to hidden."
-  def hide_comment(%Comment{} = comment) do
-    update_comment(comment, %{status: "hidden"})
+  def hide_comment(%Comment{} = comment, opts \\ []) do
+    comment
+    |> update_comment(%{status: "hidden"}, opts)
+    |> Activity.log_comment("comments.comment_hidden", opts)
   end
 
   @doc """
@@ -761,17 +996,23 @@ defmodule PhoenixKitComments do
   `"deleted"` case) so resource-handler callbacks fire per row. Returns
   `{ok_count, error_count}`.
   """
-  def bulk_update_status(comment_uuids, status)
+  def bulk_update_status(comment_uuids, status, opts \\ [])
+
+  def bulk_update_status(comment_uuids, status, opts)
       when is_list(comment_uuids) and status in ["published", "hidden", "deleted", "pending"] do
+    # Filtered before the query: these arrive from the client, and a single
+    # non-uuid element raises Ecto.Query.CastError for the whole batch.
+    valid_uuids = Enum.filter(comment_uuids, &UUIDUtils.valid?/1)
+
     comments =
-      from(c in Comment, where: c.uuid in ^comment_uuids)
+      from(c in Comment, where: c.uuid in ^valid_uuids)
       |> repo().all()
 
     Enum.reduce(comments, {0, 0}, fn comment, {ok, err} ->
       result =
         case status do
-          "deleted" -> delete_comment(comment)
-          _ -> update_comment(comment, %{status: status})
+          "deleted" -> delete_comment(comment, opts)
+          _ -> update_comment(comment, %{status: status}, opts)
         end
 
       case result do
@@ -864,7 +1105,7 @@ defmodule PhoenixKitComments do
     |> Map.new()
   rescue
     e ->
-      Logger.warning("Failed to load comment counts by type: #{inspect(e)}")
+      Logger.warning("Failed to load comment counts by type: " <> inspect(e))
       %{}
   end
 
@@ -887,7 +1128,7 @@ defmodule PhoenixKitComments do
     |> Map.new(fn {type, keys} -> {type, Enum.sort(keys)} end)
   rescue
     e ->
-      Logger.warning("Failed to load metadata keys by type: #{inspect(e)}")
+      Logger.warning("Failed to load metadata keys by type: " <> inspect(e))
       %{}
   end
 
@@ -1027,7 +1268,16 @@ defmodule PhoenixKitComments do
   atomically. Returns `{:ok, :unliked}` or `{:error, :not_found}`.
   """
   def unlike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    if maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count) do
+    # In a transaction like its counterpart: the delete and the counter
+    # decrement are two statements, and a crash between them orphaned the
+    # count. `like_comment/2` always wrapped them; this one did not.
+    {:ok, removed?} =
+      repo().transaction(fn ->
+        lock_comment(comment_uuid)
+        maybe_remove_reaction(CommentLike, comment_uuid, user_uuid, :like_count)
+      end)
+
+    if removed? do
       result = {:ok, :unliked}
       after_reaction(result, comment_uuid, user_uuid)
       result
@@ -1097,7 +1347,13 @@ defmodule PhoenixKitComments do
   `{:error, :not_found}`.
   """
   def undislike_comment(comment_uuid, user_uuid) when is_binary(user_uuid) do
-    if maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count) do
+    {:ok, removed?} =
+      repo().transaction(fn ->
+        lock_comment(comment_uuid)
+        maybe_remove_reaction(CommentDislike, comment_uuid, user_uuid, :dislike_count)
+      end)
+
+    if removed? do
       result = {:ok, :undisliked}
       after_reaction(result, comment_uuid, user_uuid)
       result
@@ -1188,6 +1444,10 @@ defmodule PhoenixKitComments do
   # Postgrex "no unique or exclusion constraint matching" on every
   # insert. The `reaction_exists?/3` precheck is therefore the dedup.
   defp insert_reaction(schema, comment_uuid, user_uuid, counter_field) do
+    # Serialised on the parent comment row — see `lock_comment/1`. Without
+    # it this is a check-then-insert with nothing underneath it.
+    lock_comment(comment_uuid)
+
     if reaction_exists?(schema, comment_uuid, user_uuid) do
       false
     else
@@ -1206,6 +1466,34 @@ defmodule PhoenixKitComments do
     end
   end
 
+  # `SELECT ... FOR UPDATE` on the comment being reacted to.
+  #
+  # There is no unique index on (comment_uuid, user_uuid): the original
+  # UNIQUE(comment_id, user_id) was dropped when the integer `user_id`
+  # column was removed during the uuid-FK migration and nothing recreated
+  # it on `user_uuid`. The schemas still declare
+  # `unique_constraint(..., name: :uq_comments_likes_comment_user)` — that
+  # is dead code, because Ecto only turns a DATABASE violation into a
+  # changeset error and there is no database constraint to violate.
+  #
+  # So `reaction_exists?/3` really was the only dedup, and a SELECT then an
+  # INSERT in READ COMMITTED is not one: two clicks in the same instant both
+  # saw "no reaction", both inserted, and the counter went to 2 for one
+  # user. Taking a row lock on the parent makes concurrent reactions to the
+  # SAME comment serialise, which is exactly the scope that matters.
+  #
+  # Restoring the index in core's chain is still worth doing — it would make
+  # this correct even for writers that bypass this function — but this
+  # closes the hole without a cross-repo migration.
+  defp lock_comment(comment_uuid) do
+    from(c in Comment, where: c.uuid == ^comment_uuid, lock: "FOR UPDATE", select: c.uuid)
+    |> repo().one()
+  rescue
+    # Outside a transaction Postgres refuses FOR UPDATE; the callers all run
+    # inside one, but a future caller that does not should not crash.
+    _ -> nil
+  end
+
   defp reaction_exists?(schema, comment_uuid, user_uuid) do
     repo().exists?(
       from(r in schema,
@@ -1222,31 +1510,33 @@ defmodule PhoenixKitComments do
       |> repo().delete_all()
 
     if count > 0 do
-      decrement_comment_counter(comment_uuid, counter_field)
+      # By the number ACTUALLY deleted, not by one. There is no unique index
+      # on (comment_uuid, user_uuid) — see `insert_reaction/4` — so duplicate
+      # rows are reachable, and decrementing by one for an N-row delete left
+      # the counter permanently above the truth with no way for a user to
+      # bring it back down.
+      decrement_comment_counter(comment_uuid, counter_field, count)
       true
     else
       false
     end
   end
 
-  defp increment_comment_counter(comment_uuid, :like_count) do
+  # One pair instead of four near-identical clauses. The counter field is
+  # already an atom chosen by the caller from a closed set, so it can be
+  # interpolated into the update directly.
+  defp increment_comment_counter(comment_uuid, counter_field) do
     from(c in Comment, where: c.uuid == ^comment_uuid)
-    |> repo().update_all(inc: [like_count: 1])
+    |> repo().update_all(inc: [{counter_field, 1}])
   end
 
-  defp increment_comment_counter(comment_uuid, :dislike_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid)
-    |> repo().update_all(inc: [dislike_count: 1])
-  end
-
-  defp decrement_comment_counter(comment_uuid, :like_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid and c.like_count > 0)
-    |> repo().update_all(inc: [like_count: -1])
-  end
-
-  defp decrement_comment_counter(comment_uuid, :dislike_count) do
-    from(c in Comment, where: c.uuid == ^comment_uuid and c.dislike_count > 0)
-    |> repo().update_all(inc: [dislike_count: -1])
+  defp decrement_comment_counter(comment_uuid, counter_field, by) do
+    # The floor still holds: `field >= by` rather than `> 0`, so a decrement
+    # that would go negative is skipped entirely instead of clamping halfway.
+    from(c in Comment,
+      where: c.uuid == ^comment_uuid and field(c, ^counter_field) >= ^by
+    )
+    |> repo().update_all(inc: [{counter_field, -by}])
   end
 
   defp count_all_comments(opts \\ []) do
@@ -1294,6 +1584,18 @@ defmodule PhoenixKitComments do
     max = get_max_length()
     content = attrs[:content] || attrs["content"] || ""
 
+    # A composer submitting `comment[x]=y` instead of `comment=y` put a MAP
+    # here, and `String.length/1` on it raised FunctionClauseError — killing
+    # the LiveView and writing the user's draft into the crash report as a
+    # side effect. Anything that is not a string is not a valid body.
+    if is_binary(content) do
+      check_content_length(content, max)
+    else
+      {:error, :invalid_content}
+    end
+  end
+
+  defp check_content_length(content, max) do
     if String.length(content) > max do
       {:error, :content_too_long}
     else
@@ -1380,6 +1682,27 @@ defmodule PhoenixKitComments do
   # author, not the reacting user; self-action skipping is the host's call. The
   # whole thing is best-effort: a DB error here must not fail the (already
   # committed) reaction, so it's rescued and logged.
+  # `:already_liked` / `:already_disliked` are NOT no-ops. Both write paths
+  # remove the opposing reaction before deciding, so a repeat click still
+  # commits a delete and a counter change — and this clause used to skip
+  # them, leaving every other subscriber showing a stale count until
+  # something unrelated forced a reload.
+  #
+  # The host CALLBACK stays scoped to real state changes (a second like is
+  # not a new like), so only the broadcast fires for the repeat case.
+  defp after_reaction({:ok, action}, comment_uuid, _liker_uuid)
+       when action in [:already_liked, :already_disliked] do
+    case get_comment(comment_uuid) do
+      %Comment{resource_type: resource_type, resource_uuid: resource_uuid} ->
+        broadcast_change(resource_type, resource_uuid, :reaction)
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  end
+
   defp after_reaction({:ok, action}, comment_uuid, liker_uuid)
        when action in [:liked, :unliked, :disliked, :undisliked] do
     case get_comment(comment_uuid) do

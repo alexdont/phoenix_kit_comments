@@ -19,11 +19,33 @@ defmodule PhoenixKitComments.Web.Index do
   alias PhoenixKit.Settings
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKit.Utils.Routes
-  alias PhoenixKitComments
   alias PhoenixKitComments.Comment
 
   @impl true
+  # Reads are gated here, not only writes.
+  #
+  # Core's admin routes are pipelined through `:phoenix_kit_ensure_admin`
+  # only; the `permission: "comments"` on the tab controls sidebar
+  # VISIBILITY, not access. So every mutation called `check_authorization/1`
+  # and correctly answered "Not authorized", while `mount/3`,
+  # `handle_params/3` and `view_comment` handed an admin without the
+  # comments permission the whole platform's comments — bodies, commenter
+  # emails, and on the settings page the Giphy API key in a form value.
+  # That every write was gated is what shows the read side was meant to be.
   def mount(_params, _session, socket) do
+    case check_authorization(socket) do
+      :ok ->
+        do_mount(socket)
+
+      {:error, :unauthorized} ->
+        {:ok,
+         socket
+         |> put_flash(:error, gettext("You do not have access to comments."))
+         |> push_navigate(to: Routes.path("/admin"))}
+    end
+  end
+
+  defp do_mount(socket) do
     if PhoenixKitComments.enabled?() do
       socket =
         socket
@@ -36,7 +58,6 @@ defmodule PhoenixKitComments.Web.Index do
         |> assign(:resource_context, %{})
         |> assign(:viewing_comment, nil)
         |> assign(:stats, empty_stats())
-        |> assign(:selected_uuids, [])
         |> assign(:resource_types, [])
         |> assign_filter_defaults()
         |> maybe_load_dashboard_data()
@@ -93,12 +114,22 @@ defmodule PhoenixKitComments.Web.Index do
   # preview; this shows the whole comment in formatted prose).
   @impl true
   def handle_event("view_comment", %{"uuid" => uuid}, socket) do
-    {:noreply,
-     assign(
-       socket,
-       :viewing_comment,
-       PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
-     )}
+    # The only read event that skipped the check every write performs. Mount
+    # now gates the page, but this stays: it reads an ARBITRARY comment by
+    # uuid, so it is the one handler where "already on the page" is not the
+    # same as "may see this row".
+    case check_authorization(socket) do
+      :ok ->
+        {:noreply,
+         assign(
+           socket,
+           :viewing_comment,
+           PhoenixKitComments.get_comment(uuid, preload: [:user, media: :file])
+         )}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+    end
   end
 
   @impl true
@@ -110,7 +141,12 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("approve", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.approve_comment(comment)
+      # Restoring publishes only where publishing is the default. With
+      # moderation ON, a restored comment goes back to the queue rather than
+      # straight onto the page — `approve_comment/2` unconditionally
+      # published, so restoring something that had never been approved
+      # published it as a side effect of undoing a delete.
+      PhoenixKitComments.restore_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -127,7 +163,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("hide", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.hide_comment(comment)
+      PhoenixKitComments.hide_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -144,7 +180,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("delete", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.delete_comment(comment)
+      PhoenixKitComments.delete_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -162,7 +198,7 @@ defmodule PhoenixKitComments.Web.Index do
   def handle_event("restore", %{"uuid" => uuid}, socket) do
     with :ok <- check_authorization(socket),
          %Comment{} = comment <- PhoenixKitComments.get_comment(uuid) do
-      PhoenixKitComments.approve_comment(comment)
+      PhoenixKitComments.approve_comment(comment, actor_opts(socket))
 
       {:noreply,
        socket
@@ -176,68 +212,59 @@ defmodule PhoenixKitComments.Web.Index do
   end
 
   @impl true
-  def handle_event("toggle_select", %{"uuid" => uuid}, socket) do
-    selected = socket.assigns.selected_uuids
-
-    selected =
-      if uuid in selected,
-        do: List.delete(selected, uuid),
-        else: [uuid | selected]
-
-    {:noreply, assign(socket, :selected_uuids, selected)}
-  end
-
-  @impl true
-  def handle_event("bulk_action", %{"action" => action}, socket) do
+  def handle_event("bulk_approve", %{"uuids" => uuids}, socket) do
     case check_authorization(socket) do
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
       :ok ->
-        do_bulk_action(action, socket)
+        do_bulk_action("approve", uuids, socket)
     end
   end
 
-  defp do_bulk_action(action, socket) do
-    uuids = socket.assigns.selected_uuids
+  @impl true
+  def handle_event("bulk_hide", %{"uuids" => uuids}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
 
+      :ok ->
+        do_bulk_action("hide", uuids, socket)
+    end
+  end
+
+  @impl true
+  def handle_event("bulk_delete_comments", %{"uuids" => uuids}, socket) do
+    case check_authorization(socket) do
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, gettext("Not authorized"))}
+
+      :ok ->
+        do_bulk_action("delete", uuids, socket)
+    end
+  end
+
+  defp do_bulk_action(action, uuids, socket) do
     if uuids == [] do
       {:noreply, put_flash(socket, :error, gettext("No comments selected"))}
     else
-      case action do
-        "approve" ->
-          PhoenixKitComments.bulk_update_status(uuids, "published")
+      {status, label} =
+        case action do
+          "approve" -> {"published", gettext("approved")}
+          "hide" -> {"hidden", gettext("hidden")}
+          "delete" -> {"deleted", gettext("deleted")}
+        end
 
-          {:noreply,
-           socket
-           |> assign(:selected_uuids, [])
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments approved"))}
+      # `bulk_update_status/2` returns `{ok_count, error_count}` and all three
+      # branches used to throw it away and flash success unconditionally — so
+      # a bulk action where every row failed reported "Comments approved".
+      {ok_count, err_count} =
+        PhoenixKitComments.bulk_update_status(uuids, status, actor_opts(socket))
 
-        "hide" ->
-          PhoenixKitComments.bulk_update_status(uuids, "hidden")
+      socket = socket |> load_comments() |> reload_stats()
 
-          {:noreply,
-           socket
-           |> assign(:selected_uuids, [])
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments hidden"))}
-
-        "delete" ->
-          PhoenixKitComments.bulk_update_status(uuids, "deleted")
-
-          {:noreply,
-           socket
-           |> assign(:selected_uuids, [])
-           |> load_comments()
-           |> reload_stats()
-           |> put_flash(:info, gettext("Comments deleted"))}
-
-        _ ->
-          {:noreply, socket}
-      end
+      {:noreply,
+       put_flash(socket, bulk_flash_kind(err_count), bulk_message(ok_count, err_count, label))}
     end
   end
 
@@ -331,6 +358,43 @@ defmodule PhoenixKitComments.Web.Index do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(val), do: val
 
+  defp bulk_flash_kind(0), do: :info
+  defp bulk_flash_kind(_), do: :error
+
+  defp bulk_message(ok_count, 0, label),
+    do:
+      ngettext("%{count} comment %{action}", "%{count} comments %{action}", ok_count,
+        count: ok_count,
+        action: label
+      )
+
+  defp bulk_message(0, err_count, label),
+    do:
+      ngettext(
+        "%{count} comment could not be %{action}",
+        "%{count} comments could not be %{action}",
+        err_count,
+        count: err_count,
+        action: label
+      )
+
+  defp bulk_message(ok_count, err_count, label),
+    do:
+      gettext("%{ok} %{action}, %{failed} failed",
+        ok: ok_count,
+        action: label,
+        failed: err_count
+      )
+
+  # The acting admin, for the audit trail. Moderation is exactly the kind of
+  # action whose value is knowing who took it.
+  defp actor_opts(socket) do
+    case socket.assigns[:phoenix_kit_current_scope] do
+      %{user: %{uuid: uuid}} -> [actor_uuid: uuid]
+      _ -> []
+    end
+  end
+
   defp check_authorization(socket) do
     scope = socket.assigns[:phoenix_kit_current_scope]
 
@@ -394,7 +458,7 @@ defmodule PhoenixKitComments.Web.Index do
           "inline-flex items-center gap-1.5 max-w-[200px] py-0.5 px-2.5 rounded-full bg-base-200 align-middle",
           @class
         ]}
-        title={"#{@comment.resource_type}: #{@comment.resource_uuid}"}
+        title={"#{humanize_resource_type(@comment.resource_type)}: #{@comment.resource_uuid}"}
       >
         <.icon name="hero-tag" class="w-3.5 h-3.5 text-base-content/40 shrink-0" />
         <span class="truncate text-xs text-base-content/70 min-w-0">
@@ -427,7 +491,7 @@ defmodule PhoenixKitComments.Web.Index do
       style={"background-image: url('#{@info.thumb_url}')"}
     />
     <span :if={!@info[:thumb_url]} class="badge badge-ghost badge-xs shrink-0">
-      {@comment.resource_type}
+      {humanize_resource_type(@comment.resource_type)}
     </span>
     <span class="truncate text-sm min-w-0">{@info.title}</span>
     """
@@ -435,10 +499,27 @@ defmodule PhoenixKitComments.Web.Index do
 
   # "test_page" -> "Test page". Used for the no-handler fallback chip so an
   # unconfigured resource type reads as a label, not a raw key.
+  # Enough for one clamped line, cut on a boundary so markdown syntax is not
+  # sliced mid-token.
+  @preview_chars 200
+
+  defp preview_source(content) when is_binary(content) do
+    if String.length(content) > @preview_chars do
+      String.slice(content, 0, @preview_chars) <> "…"
+    else
+      content
+    end
+  end
+
+  defp preview_source(content), do: content
+
   defp humanize_resource_type(type) when is_binary(type) and type != "" do
+    # Per WORD. `String.capitalize/1` lowercases the whole string, so
+    # "api_key" became "Api key" and "GitHubRepo" became "Githubrepo".
     type
     |> String.replace(["_", "-"], " ")
-    |> String.capitalize()
+    |> String.split(" ", trim: true)
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp humanize_resource_type(_), do: gettext("Resource")
@@ -505,9 +586,13 @@ defmodule PhoenixKitComments.Web.Index do
           <.icon name={media_icon(@comment)} class="w-4 h-4 shrink-0" />
           {media_placeholder(@comment)}
         </span>
+        <%!-- Truncated at the SOURCE. This parsed and sanitised every
+             comment body in full, per row, only to clamp the result to one
+             line with CSS — the whole render cost for a single line of
+             output. --%>
         <.comment_markdown
           :if={not blank_content?(@comment.content)}
-          content={@comment.content}
+          content={preview_source(@comment.content)}
           compact
           class="text-sm line-clamp-1"
         />
@@ -568,6 +653,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status not in ["published", "deleted"]}
         phx-click="approve"
+        phx-disable-with={gettext("Approving…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-check"
         label={gettext("Approve")}
@@ -576,6 +662,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status not in ["hidden", "deleted"]}
         phx-click="hide"
+        phx-disable-with={gettext("Hiding…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-eye-slash"
         label={gettext("Hide")}
@@ -584,6 +671,7 @@ defmodule PhoenixKitComments.Web.Index do
       <.table_row_menu_button
         :if={@comment.status == "deleted"}
         phx-click="restore"
+        phx-disable-with={gettext("Restoring…")}
         phx-value-uuid={@comment.uuid}
         icon="hero-arrow-uturn-left"
         label={gettext("Restore")}
@@ -594,6 +682,7 @@ defmodule PhoenixKitComments.Web.Index do
         :if={@comment.status != "deleted"}
         phx-click="delete"
         phx-value-uuid={@comment.uuid}
+        phx-disable-with={gettext("Deleting…")}
         data-confirm={gettext("Delete this comment?")}
         icon="hero-trash"
         label={gettext("Delete")}

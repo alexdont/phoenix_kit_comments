@@ -1,7 +1,7 @@
 defmodule PhoenixKitComments.MixProject do
   use Mix.Project
 
-  @version "0.2.13"
+  @version "0.4.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_comments"
 
   def project do
@@ -74,7 +74,15 @@ defmodule PhoenixKitComments.MixProject do
   defp deps do
     [
       # PhoenixKit provides the Module behaviour and Settings API.
-      pk_dep(:phoenix_kit, "~> 1.7"),
+      # ⚠️ Comment attribution (`author_display_name`, `attribution_mode`,
+      # `attributed_project_uuid`, `attributed_label` on
+      # `phoenix_kit_comments`) needs core migration V166, which this floor
+      # still predates — a host at the floor gets a missing-column error
+      # from `get_comment_tree/2`. Deliberately not raised further because
+      # the core release carrying V166 is unpublished; bump it as part of
+      # releasing that. `display_name/1` is already guarded at the call site
+      # for the same reason.
+      pk_dep(:phoenix_kit, "~> 2.0"),
 
       # LiveView is needed for the admin pages.
       {:phoenix_live_view, "~> 1.1"},
