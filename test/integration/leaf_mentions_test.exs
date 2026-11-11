@@ -39,6 +39,13 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     {view, html, editor_id}
   end
 
+  defp leaf_has_mentions? do
+    case Leaf.__components__()[:leaf_editor] do
+      %{attrs: attrs} -> Enum.any?(attrs, &(&1.name == :mentions))
+      _ -> false
+    end
+  end
+
   defp leaf(view, message) do
     Phoenix.LiveView.send_update(view.pid, CommentsComponent, id: "test-thread", leaf: message)
     render(view)
@@ -54,6 +61,9 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     {_view, html, _id} = open(conn, scope, r)
     assert html =~ "data-leaf-suggestions"
     assert html =~ "Type @ to mention someone"
+    # A Leaf with mention chips shows a picked mention as "@Name" (ALEX-75);
+    # one without the attribute ignores it.
+    assert html =~ ~s(data-mentions="true") or not leaf_has_mentions?()
   end
 
   test "what is typed reaches the thread without the host forwarding it", %{

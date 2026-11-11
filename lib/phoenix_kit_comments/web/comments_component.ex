@@ -2334,6 +2334,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
                 content={@editing_content || ""}
                 mode={@ctx.editor_mode}
                 notify={if @ctx.leaf_notify?, do: {__MODULE__, @ctx.id}}
+                mentions={@ctx.leaf_notify? and @ctx.mentions_on}
                 suggestions={
                   if @ctx.leaf_notify? and @ctx.mentions_on, do: mention_suggestions(), else: []
                 }
@@ -3162,6 +3163,7 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
           content={@ctx.new_comment || ""}
           mode={@ctx.editor_mode}
           notify={if @ctx.leaf_notify?, do: {__MODULE__, @ctx.id}}
+          mentions={@ctx.leaf_notify? and @ctx.mentions_on}
           suggestions={
             if @ctx.leaf_notify? and @ctx.mentions_on, do: mention_suggestions(), else: []
           }
