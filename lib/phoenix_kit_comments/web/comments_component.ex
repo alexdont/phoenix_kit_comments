@@ -1911,7 +1911,8 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
             [
               source_type: comment.resource_type,
               source_uuid: comment.resource_uuid,
-              preview: comment.content
+              preview: comment.content,
+              link: comment_link(comment)
             ]
           ])
 
@@ -1924,6 +1925,49 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
   catch
     :exit, _ -> :ok
   end
+
+  @doc false
+  # Where a notification about this comment takes its reader: the page of the
+  # record it is on (core's `ResourceLinks`, the same resolution the
+  # moderation page links with), with the annotation for a file's comment,
+  # and the comment's own anchor. `nil` when the record has no page — core
+  # then sends the notification without a link rather than a wrong one, and
+  # drops anything that is not a path on this site.
+  @spec comment_link(map()) :: String.t() | nil
+  def comment_link(%{resource_type: type, resource_uuid: uuid} = comment) do
+    case PhoenixKit.ResourceLinks.resolve([comment]) do
+      %{{^type, ^uuid} => %{path: path} = info} when is_binary(path) and path != "" ->
+        info
+        |> PhoenixKit.ResourceLinks.url()
+        |> with_annotation(comment)
+        |> Kernel.<>("#pk-comment-" <> comment.uuid)
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  def comment_link(_comment), do: nil
+
+  @doc false
+  # A file's comment is about one annotation on it: the page opens on it. Only
+  # a real uuid is appended — the metadata is the client's (see `Index`).
+  @spec with_annotation(String.t(), map()) :: String.t()
+  def with_annotation(url, %{resource_type: "file", metadata: %{} = metadata}) do
+    with uuid when is_binary(uuid) <- Map.get(metadata, "annotation_uuid"),
+         {:ok, valid} <- Ecto.UUID.cast(uuid) do
+      sep = if String.contains?(url, "?"), do: "&", else: "?"
+      url <> sep <> "annotation=" <> valid
+    else
+      _ -> url
+    end
+  end
+
+  def with_annotation(url, _comment), do: url
 
   # A full scope for the person reading, so a handler can answer questions
   # that need permissions (a site admin sees more than their memberships).
@@ -2010,10 +2054,16 @@ defmodule PhoenixKitComments.Web.CommentsComponent do
       )
 
     ~H"""
+    <%!-- The id is the target of a link to this comment (`#pk-comment-…`,
+         what a mention notification links to); the thread's
+         `PhoenixKitCommentsJumpToComment` hook brings it into view.
+         `scroll-mt-20` keeps it clear of a sticky header. --%>
     <div
+      id={"pk-comment-#{@comment.uuid}"}
       data-comment-uuid={@comment.uuid}
       data-annotation-uuid={@annotation_uuid}
       class={[
+        "scroll-mt-20",
         # A reply hangs off a line under the centre of its parent's 24px
         # avatar (ml-[11px] + the 2px line), not past the parent's text:
         # the text was indented twice (2026-11-02).

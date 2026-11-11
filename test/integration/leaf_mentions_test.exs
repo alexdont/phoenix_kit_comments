@@ -179,4 +179,47 @@ defmodule PhoenixKitComments.Web.LeafMentionsTest do
     {_view, html, _id} = open(conn, scope, r)
     refute html =~ "data-leaf-suggestions"
   end
+
+  describe "where a mention notification takes its reader" do
+    setup do
+      previous = PhoenixKit.ResourceLinks.get_resource_path_templates()
+
+      PhoenixKit.ResourceLinks.update_resource_path_templates(%{
+        "test_resource" => "/things/:uuid"
+      })
+
+      on_exit(fn -> PhoenixKit.ResourceLinks.update_resource_path_templates(previous) end)
+      :ok
+    end
+
+    test "to the comment itself, on its record's page", %{user: user, resource_uuid: r} do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{"content" => "Hi"})
+
+      assert CommentsComponent.comment_link(comment) == "/things/#{r}#pk-comment-#{comment.uuid}"
+    end
+
+    test "nowhere when the record has no page", %{user: user} do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("unlinked_type", Ecto.UUID.generate(), user.uuid, %{
+          "content" => "Hi"
+        })
+
+      assert CommentsComponent.comment_link(comment) == nil
+    end
+
+    test "every comment carries the anchor, and the thread the hook that jumps to it", %{
+      conn: conn,
+      scope: scope,
+      user: user,
+      resource_uuid: r
+    } do
+      {:ok, comment} =
+        PhoenixKitComments.create_comment("test_resource", r, user.uuid, %{"content" => "Hi"})
+
+      {:ok, _view, html} = conn |> put_test_scope(scope) |> live("/en/test/thread/#{r}")
+      assert html =~ ~s(id="pk-comment-#{comment.uuid}")
+      assert html =~ ~s(phx-hook="PhoenixKitCommentsJumpToComment")
+    end
+  end
 end
